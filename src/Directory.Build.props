@@ -1,0 +1,15 @@
+<Project>
+	<PropertyGroup>
+		<Product>WindyCliffs.Clock</Product>
+		<Company>Windy Cliffs</Company>
+		<Copyright>Copyright © 2023</Copyright>
+		<Description>The library for testable time management.</Description>
+
+		<MajorVersion>0</MajorVersion>
+		<MinorVersion>1</MinorVersion>
+		<Revision>0</Revision>
+		<Version>$(MajorVersion).$(MinorVersion).$(Revision)</Version>
+		<AssemblyVersion>$(MajorVersion).0.0.0</AssemblyVersion>
+		<FileVersion>$(Version).0</FileVersion>
+	</PropertyGroup>
+</Project>

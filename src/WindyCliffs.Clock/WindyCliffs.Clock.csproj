@@ -1,0 +1,13 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>netstandard2.0</TargetFramework>
+		<LangVersion>9.0</LangVersion>
+		<Nullable>enable</Nullable>
+		<GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+		<PackageId>WindyCliffs.Clock</PackageId>
+		<PackageVersion>$(Version)</PackageVersion>
+		<PackageTags>clock, dependency injection, test, mock</PackageTags>
+	</PropertyGroup>
+
+</Project>

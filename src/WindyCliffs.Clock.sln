@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.8.34316.72
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WindyCliffs.Clock", "WindyCliffs.Clock\WindyCliffs.Clock.csproj", "{912AA63C-1CD7-4F84-AB69-E9012877B90D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WindyCliffs.Clock.Tests", "WindyCliffs.Clock.Tests\WindyCliffs.Clock.Tests.csproj", "{026CA541-90F9-4E82-9FA2-CE5DEA94ED6A}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{912AA63C-1CD7-4F84-AB69-E9012877B90D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{912AA63C-1CD7-4F84-AB69-E9012877B90D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{912AA63C-1CD7-4F84-AB69-E9012877B90D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{912AA63C-1CD7-4F84-AB69-E9012877B90D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{026CA541-90F9-4E82-9FA2-CE5DEA94ED6A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{026CA541-90F9-4E82-9FA2-CE5DEA94ED6A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{026CA541-90F9-4E82-9FA2-CE5DEA94ED6A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{026CA541-90F9-4E82-9FA2-CE5DEA94ED6A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {51DE85FE-68FA-4767-8B68-DA2DCCF3992C}
+	EndGlobalSection
+EndGlobal
