@@ -1,6 +1,7 @@
 ﻿namespace WindyCliffs.Clock
 {
     using System;
+    using System.Threading;
 
     /// <summary>
     /// The implementation of <see cref="IClock"/> bound to the operating system clock.
@@ -16,5 +17,8 @@
 
         /// <inhertdoc />
         public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
+
+        /// <inhertdoc />
+        public void Sleep(TimeSpan timeout) => Thread.Sleep(timeout);
     }
 }
