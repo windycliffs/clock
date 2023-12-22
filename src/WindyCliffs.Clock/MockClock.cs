@@ -1,6 +1,7 @@
 ﻿namespace WindyCliffs.Clock
 {
     using System;
+    using System.Threading;
 
     /// <summary>
     /// The mock clock completely controlled by code that can be used to implement deterministic tests
@@ -15,7 +16,7 @@
 
         private static readonly TimeSpan DefaultAdvancementStep = TimeSpan.FromSeconds(1);
 
-        private DateTimeOffset utcNow = DefaultStartTime;
+        private long utcNow = DefaultStartTime.ToFileTime();
 
         private TimeSpan advancementStep = DefaultAdvancementStep;
 
@@ -24,17 +25,46 @@
         /// </summary>
         public DateTimeOffset UtcNow
         {
-            get => this.utcNow;
+            get => DateTimeOffset.FromFileTime(Interlocked.Read(ref this.utcNow));
             set
             {
-                if (this.utcNow == value)
+                long fileTime = value.ToFileTime();
+
+                if (this.utcNow == fileTime)
                 {
                     return;
                 }
 
-                this.utcNow = value;
+                Interlocked.Exchange(ref this.utcNow, fileTime);
                 this.Changed?.Invoke(this, value);
             }
+        }
+
+        /// <inheritdoc />
+        public void Sleep(TimeSpan timeout)
+        {
+            // This blocks the thread indefinitely.
+            if (timeout == Timeout.InfiniteTimeSpan)
+            {
+                Thread.Sleep(Timeout.InfiniteTimeSpan);
+                return;
+            }
+
+            if (timeout == TimeSpan.Zero)
+            {
+                return;
+            }
+
+            if (timeout < TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(timeout), "The time-out value is negative and is not equal to Infinite.");
+            }
+
+            using var waiter = new ManualResetEventSlim(false);
+
+            using var scheduledAction = new ScheduledAction(this, this.UtcNow + timeout, () => waiter.Set());
+
+            waiter.Wait();
         }
 
         /// <summary>
@@ -87,7 +117,7 @@
                 throw new ArgumentOutOfRangeException(nameof(interval));
             }
 
-            this.AdvanceTo(this.utcNow + interval, step);
+            this.AdvanceTo(this.UtcNow + interval, step);
         }
 
         /// <summary>
@@ -126,6 +156,51 @@
             }
 
             this.UtcNow = newTime;
+        }
+
+        private class ScheduledAction : IDisposable
+        {
+            private readonly MockClock clock;
+
+            private readonly DateTimeOffset onOrAfter;
+
+            private readonly Action action;
+
+            private readonly object syncRoot = new object();
+
+            private volatile bool isDisposed = false;
+
+            public ScheduledAction(MockClock clock, DateTimeOffset onOrAfter, Action action)
+            {
+                this.clock = clock;
+                this.onOrAfter = onOrAfter;
+                this.action = action;
+
+                this.clock.Changed += this.ClockChanged;
+
+                this.ClockChanged(this.clock, this.clock.UtcNow);
+            }
+
+            public void Dispose()
+            {
+                this.isDisposed = true;
+                this.clock.Changed -= this.ClockChanged;
+            }
+
+            private void ClockChanged(MockClock clock, DateTimeOffset utcNow)
+            {
+                if (!this.isDisposed && utcNow >= this.onOrAfter)
+                {
+                    lock (this.syncRoot)
+                    {
+                        if (!this.isDisposed)
+                        {
+                            this.action.Invoke();
+                            this.Dispose();
+                        }
+                    }
+                }
+            }
         }
     }
 }
