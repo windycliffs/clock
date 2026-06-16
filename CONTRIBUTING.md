@@ -53,6 +53,16 @@ Apply these rules when deciding what to bump:
 > A breaking change to the library must be confirmed with the human maintainer
 > before it is made. See [AGENTS.md](AGENTS.md).
 
+### Pre-1.0 versioning (temporary)
+
+While `MajorVersion` is `0` (pre-release), a breaking change does **not**
+increment the Major version. Keep Major at `0` and bump **Minor** instead
+(resetting `Revision` to `0`) — **unless the maintainer explicitly instructs a
+Major bump**. This overrides rule 2 above for as long as the project is pre-1.0.
+
+**Remove this entire subsection once the version reaches `1.0.0`**, after which
+the standard rule 2 (breaking → Major) applies.
+
 Whenever you bump the version, record the change in
 [CHANGELOG.md](CHANGELOG.md) under the `[Unreleased]` section.
 

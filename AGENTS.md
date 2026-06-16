@@ -73,5 +73,6 @@ and `net10.0`.
 before it is made.** A breaking change is anything not backward-compatible for
 consumers — removing or renaming public members, changing public signatures, or
 altering observable behaviour. When a requested task would require one, stop and
-get explicit confirmation first; then bump the **Major** version per
-[CONTRIBUTING.md](CONTRIBUTING.md).
+get explicit confirmation first; then bump the version per
+[CONTRIBUTING.md](CONTRIBUTING.md) — while `MajorVersion` is `0`, do **not** bump
+Major unless explicitly told (see its "Pre-1.0 versioning" note).
