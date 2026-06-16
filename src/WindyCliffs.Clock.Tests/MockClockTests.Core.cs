@@ -2,17 +2,9 @@
 {
     using System;
     using Xunit;
-    using Xunit.Abstractions;
 
     public partial class MockClockTests
     {
-        private readonly ITestOutputHelper output;
-
-        public MockClockTests(ITestOutputHelper output)
-        {
-            this.output = output;
-        }
-
         [Fact]
         public void Defaults_AreCorrect()
         {

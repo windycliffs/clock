@@ -1,0 +1,3 @@
+<Project>
+	<!-- Repo-wide MSBuild targets. Add shared build logic here as the repo grows. -->
+</Project>

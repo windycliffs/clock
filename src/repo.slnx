@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="WindyCliffs.Clock/WindyCliffs.Clock.csproj" />
+  <Project Path="WindyCliffs.Clock.Tests/WindyCliffs.Clock.Tests.csproj" />
+</Solution>
