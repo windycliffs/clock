@@ -15,6 +15,7 @@ NuGet as `WindyCliffs.Clock`.
 ```
 .
 ├── README.md            # Overview + quick start
+├── LICENSE              # MIT license
 ├── CHANGELOG.md         # Keep a Changelog history
 ├── CONTRIBUTING.md      # Build/test + versioning rules
 ├── AGENTS.md            # This file

@@ -78,3 +78,7 @@ Full guides live in the GitHub repository:
 - [Architecture](https://github.com/windycliffs/clock/blob/HEAD/docs/ARCHITECTURE.md) — how the abstraction and `MockClock` time-advancement are designed.
 
 The source lives at [github.com/windycliffs/clock](https://github.com/windycliffs/clock).
+
+## License
+
+MIT — see [LICENSE](https://github.com/windycliffs/clock/blob/HEAD/LICENSE).
