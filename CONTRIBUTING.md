@@ -90,3 +90,29 @@ Publishing is automated. Creating a **published GitHub Release** triggers
 `WindyCliffs.Clock`, and pushes the resulting package to NuGet. Make sure the
 version in `src/Directory.Build.props` and the `CHANGELOG.md` entry are updated
 before tagging the release.
+
+### NuGet authentication (trusted publishing)
+
+The workflow authenticates to nuget.org with **trusted publishing (OIDC)** — it
+exchanges a GitHub-issued OIDC token for a short-lived (one-hour) API key at
+publish time, so there is no long-lived API key stored in the repository.
+
+This requires a **one-time setup that must be done before the first release is
+triggered**, or the workflow fails at the `NuGet login` step and the package is
+not published:
+
+1. On nuget.org, create a **Trusted Publishing** policy (under your account →
+   *Trusted Publishing*) with: Repository Owner `windycliffs`, Repository
+   `clock`, Workflow File `release.yml` (file name only), and no environment. If
+   you later add a GitHub Environment (`environment:` on the job), update the
+   policy to match the environment name or the OIDC exchange will fail.
+2. Add a repository secret **`NUGET_USER`** (GitHub repo → *Settings* →
+   *Secrets and variables* → *Actions* → *New repository secret*) containing your
+   nuget.org **account username / profile name** (e.g. `windycliffs`) — **not**
+   your account email.
+
+The legacy `nuget_publish` API-key secret is no longer referenced by the
+workflow, so on its own it is not a working rollback path. Retain it until the
+first OIDC-authenticated publish succeeds; to roll back you would revert
+`release.yml` to the API-key version **and** rely on that still-present secret.
+Once OIDC publishing is confirmed working, the secret can be deleted.
