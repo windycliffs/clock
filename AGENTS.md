@@ -31,6 +31,8 @@ NuGet as `WindyCliffs.Clock`.
     ├── .editorconfig            # Code style
     ├── repo.slnx                # Solution
     ├── WindyCliffs.Clock/       # Library (netstandard2.0)
+    │   ├── WindyCliffs.Clock.csproj # Package metadata (PackageReadmeFile etc.)
+    │   ├── README.md                # NuGet package README (shipped in the package)
     │   ├── IClock.cs
     │   ├── SystemClock.cs
     │   └── MockClock.cs
@@ -66,6 +68,10 @@ and `net10.0`.
 - The package version is bumped via `MajorVersion`/`MinorVersion`/`Revision` in
   `src/Directory.Build.props`, following the rules in
   [CONTRIBUTING.md](CONTRIBUTING.md). Record version changes in `CHANGELOG.md`.
+- The NuGet package README is `src/WindyCliffs.Clock/README.md` (shipped in the
+  package via `PackageReadmeFile` and rendered on nuget.org). It is **distinct
+  from the repo-root `README.md`** (which targets GitHub readers). Keep it
+  current whenever the public API or usage changes.
 
 ## Breaking changes
 

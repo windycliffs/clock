@@ -2,8 +2,12 @@
 	<PropertyGroup>
 		<Product>WindyCliffs.Clock</Product>
 		<Company>Windy Cliffs</Company>
+		<Authors>Windy Cliffs</Authors>
 		<Copyright>Copyright © 2023</Copyright>
 		<Description>The library for testable time management.</Description>
+		<PackageProjectUrl>https://github.com/windycliffs/clock</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/windycliffs/clock</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
 
 		<!-- Pre-1.0 exception active: while MajorVersion is 0, breaking changes do NOT bump
 		     Major (see CONTRIBUTING.md "Pre-1.0 versioning"). Remove that note when raising to 1. -->
