@@ -1,7 +1,6 @@
 ﻿namespace WindyCliffs.Clock
 {
     using System;
-    using System.Collections.Generic;
     using System.Threading;
     using System.Threading.Tasks;
 
@@ -22,10 +21,15 @@
 
         private TimeSpan advancementStep = DefaultAdvancementStep;
 
-        private readonly object cancelAfterSyncRoot = new object();
+        private readonly ScheduledCancellationCollection scheduledCancellations;
 
-        private readonly Dictionary<CancellationTokenSource, ScheduledAction> pendingCancellations =
-            new Dictionary<CancellationTokenSource, ScheduledAction>();
+        /// <summary>
+        /// Initialises a new instance of the <see cref="MockClock"/> class.
+        /// </summary>
+        public MockClock()
+        {
+            this.scheduledCancellations = new ScheduledCancellationCollection(this);
+        }
 
         /// <summary>
         /// Gets or sets the current time on the mock clock in UTC timezone.
@@ -152,57 +156,7 @@
                 return;
             }
 
-            // Replace any cancellation pending for this source under one lock so the latest deadline wins
-            // even under concurrent calls. The holder lets the scheduled action find its own map entry.
-            var holder = new ScheduledAction[1];
-            ScheduledAction? previous;
-            lock (this.cancelAfterSyncRoot)
-            {
-                this.pendingCancellations.TryGetValue(source, out previous);
-                this.pendingCancellations.Remove(source);
-
-                // Infinite schedules nothing; zero is cancelled below. A positive timeout never fires inside
-                // the constructor (its target is in the future), so holder[0] is assigned before it can run.
-                if (timeout != Timeout.InfiniteTimeSpan && timeout != TimeSpan.Zero)
-                {
-                    holder[0] = new ScheduledAction(this, this.UtcNow + timeout, () => this.CancelScheduled(source, holder[0]));
-                    this.pendingCancellations[source] = holder[0];
-                }
-            }
-
-            // Done outside the lock: Dispose takes the replaced action's lock, which the fire path holds
-            // while it reacquires cancelAfterSyncRoot, so disposing under the lock would risk a deadlock.
-            previous?.Dispose();
-            if (timeout == TimeSpan.Zero)
-            {
-                source.Cancel();
-            }
-        }
-
-        private void CancelScheduled(CancellationTokenSource source, ScheduledAction self)
-        {
-            try
-            {
-                source.Cancel();
-            }
-            catch (ObjectDisposedException)
-            {
-                // Disposed before its deadline; nothing to cancel. The catch is narrow so a throwing
-                // cancellation callback still surfaces to the AdvanceBy/AdvanceTo caller.
-            }
-            finally
-            {
-                // Remove this fired action's entry, unless a concurrent reschedule already replaced it (the
-                // replacement may briefly coexist with this still-disposing action).
-                lock (this.cancelAfterSyncRoot)
-                {
-                    if (this.pendingCancellations.TryGetValue(source, out ScheduledAction current) &&
-                        ReferenceEquals(current, self))
-                    {
-                        this.pendingCancellations.Remove(source);
-                    }
-                }
-            }
+            this.scheduledCancellations.AddOrReplace(source, timeout);
         }
 
         /// <summary>
@@ -294,57 +248,6 @@
             }
 
             this.UtcNow = newTime;
-        }
-
-        private class ScheduledAction : IDisposable
-        {
-            private readonly MockClock clock;
-
-            private readonly DateTimeOffset onOrAfter;
-
-            private readonly Action action;
-
-            private readonly object syncRoot = new object();
-
-            private volatile bool isDisposed = false;
-
-            public ScheduledAction(MockClock clock, DateTimeOffset onOrAfter, Action action)
-            {
-                this.clock = clock;
-                this.onOrAfter = onOrAfter;
-                this.action = action;
-
-                this.clock.Changed += this.ClockChanged;
-
-                this.ClockChanged(this.clock, this.clock.UtcNow);
-            }
-
-            public void Dispose()
-            {
-                // Serialise with ClockChanged so setting the flag and unsubscribing are atomic with the
-                // guarded check. TaskDelay may call this from a cancellation callback concurrently with a
-                // clock advancement; the in-fire-path call (from ClockChanged) re-enters the lock safely.
-                lock (this.syncRoot)
-                {
-                    this.isDisposed = true;
-                    this.clock.Changed -= this.ClockChanged;
-                }
-            }
-
-            private void ClockChanged(MockClock clock, DateTimeOffset utcNow)
-            {
-                if (!this.isDisposed && utcNow >= this.onOrAfter)
-                {
-                    lock (this.syncRoot)
-                    {
-                        if (!this.isDisposed)
-                        {
-                            this.action.Invoke();
-                            this.Dispose();
-                        }
-                    }
-                }
-            }
         }
     }
 }
