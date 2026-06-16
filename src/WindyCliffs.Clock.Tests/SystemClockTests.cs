@@ -40,7 +40,7 @@ namespace WindyCliffs.Clock.Tests
             using var finished = new ManualResetEventSlim(false);
 
             var isInterrupted = false;
-            var clock = new MockClock();
+            var clock = SystemClock.Instance;
 
             var thread = new Thread(_ =>
             {
@@ -62,13 +62,13 @@ namespace WindyCliffs.Clock.Tests
 
             thread.Start();
 
-            started.Wait();
+            Assert.True(started.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken), "Thread never started.");
 
-            Assert.False(finished.Wait(TimeSpan.FromSeconds(1)), "Thread finished prematurely.");
+            Assert.False(finished.Wait(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken), "Thread finished prematurely.");
 
             thread.Interrupt();
 
-            Assert.True(finished.Wait(TimeSpan.FromSeconds(1)), "Thread never finished.");
+            Assert.True(finished.Wait(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken), "Thread never finished.");
             Assert.True(isInterrupted, "Thread wasn't interrupted.");
         }
 
