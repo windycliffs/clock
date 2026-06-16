@@ -8,6 +8,9 @@ jobs:
   build:
     runs-on: windows-latest
     timeout-minutes: 5
+    permissions:
+      id-token: write   # mint the GitHub OIDC token for NuGet trusted publishing
+      contents: read    # required for actions/checkout once a permissions block is set
     defaults:
       run:
         working-directory: src
@@ -27,15 +30,24 @@ jobs:
       run: dotnet test -c Release --no-build repo.slnx
     - name: Pack nugets
       run: dotnet pack -c Release --no-build WindyCliffs.Clock/WindyCliffs.Clock.csproj --output out/
+    - name: NuGet login (OIDC -> temporary API key)
+      # Exchanges the GitHub OIDC token for a short-lived (1-hour) nuget.org API
+      # key via trusted publishing — no long-lived secret. Run just before push.
+      # Pinned to a commit SHA (the v1.2.0 release) for supply-chain safety.
+      uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841  # v1.2.0
+      id: login
+      with:
+        user: ${{ secrets.NUGET_USER }}
     - name: Push to NuGet
       shell: pwsh
-      # Pass the API key via env (kept out of the command-line argument vector).
+      # Pass the temporary key via env (kept out of the command-line argument vector).
       env:
-        NUGET_API_KEY: ${{ secrets.nuget_publish }}
+        NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
       # Resolve the package explicitly: dotnet nuget push does not expand the
       # out/*.nupkg wildcard, and PowerShell passes it through literally on the
       # Windows runner. (Get-ChildItem runs relative to working-directory: src.)
       run: |
         $package = Get-ChildItem -Path out -Filter *.nupkg | Select-Object -First 1
         if (-not $package) { throw "No .nupkg found in out/." }
+        if (-not $env:NUGET_API_KEY) { throw "NUGET_API_KEY is empty — the NuGet login (OIDC) step may have failed." }
         dotnet nuget push $package.FullName --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json --skip-duplicate

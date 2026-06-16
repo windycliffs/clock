@@ -22,7 +22,7 @@ NuGet as `WindyCliffs.Clock`.
 │   ├── ARCHITECTURE.md  # Design of the abstraction and MockClock mechanism
 │   └── USAGE.md         # Detailed API usage
 ├── .github/workflows/
-│   └── release.yml      # Builds, tests, packs, and pushes to NuGet on release
+│   └── release.yml      # Builds, tests, packs, publishes to NuGet via OIDC trusted publishing
 └── src/                 # Build root — all build artefacts live here
     ├── global.json              # Pins the .NET 10 SDK band
     ├── Directory.Build.props    # Shared props + package version metadata
