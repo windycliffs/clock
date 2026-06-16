@@ -47,6 +47,8 @@ The operating-system clock:
 
 - `SystemClock.Instance.UtcNow` returns `DateTimeOffset.UtcNow`.
 - `SystemClock.Instance.Sleep(timeout)` delegates to `Thread.Sleep(timeout)`.
+- `SystemClock.Instance.TaskDelay(timeout, cancellationToken)` delegates to
+  `Task.Delay(timeout, cancellationToken)`.
 
 Use it in production; use `MockClock` in tests.
 
@@ -130,3 +132,34 @@ worker.Join();
 
 Because nothing depends on real elapsed time, the test is deterministic and
 runs instantly.
+
+### `TaskDelay` semantics
+
+`MockClock.TaskDelay` is the asynchronous counterpart of `Sleep`. It returns a
+task that is also driven by time advancement rather than wall-clock time:
+
+| `timeout`                   | Behaviour                                                                                                            |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `TimeSpan.Zero`             | Returns an already-completed task.                                                                                   |
+| Positive, finite            | The task completes once the clock is advanced to `UtcNow + timeout`.                                                 |
+| `Timeout.InfiniteTimeSpan`  | The task completes **only** if `cancellationToken` is cancelled; advancing the clock never releases it (unlike `Sleep`, which only a thread interrupt ends). |
+| Negative (and not infinite) | Throws `ArgumentOutOfRangeException` synchronously.                                                                  |
+
+Cancellation never throws synchronously from `TaskDelay`: a cancelled token
+(whether already cancelled when called, or cancelled while the task is pending)
+transitions the returned task to the canceled state, so awaiting it throws
+`TaskCanceledException`.
+
+A pending delay is released by advancing the clock — and because `TaskDelay`
+returns immediately, the test can advance the clock on the same thread:
+
+```csharp
+var clock = new MockClock();
+
+Task delay = clock.TaskDelay(TimeSpan.FromSeconds(30));
+
+// The task is pending until we move time forward:
+clock.AdvanceBy(TimeSpan.FromSeconds(30));
+
+await delay; // completes immediately
+```

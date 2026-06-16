@@ -2,6 +2,7 @@
 {
     using System;
     using System.Threading;
+    using System.Threading.Tasks;
 
     /// <summary>
     /// The implementation of <see cref="IClock"/> bound to the operating system clock.
@@ -15,10 +16,14 @@
 
         private SystemClock() { }
 
-        /// <inhertdoc />
+        /// <inheritdoc />
         public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
 
-        /// <inhertdoc />
+        /// <inheritdoc />
         public void Sleep(TimeSpan timeout) => Thread.Sleep(timeout);
+
+        /// <inheritdoc />
+        public Task TaskDelay(TimeSpan timeout, CancellationToken cancellationToken = default)
+            => Task.Delay(timeout, cancellationToken);
     }
 }

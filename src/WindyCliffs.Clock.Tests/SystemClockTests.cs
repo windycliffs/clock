@@ -2,6 +2,7 @@ namespace WindyCliffs.Clock.Tests
 {
     using System;
     using System.Threading;
+    using System.Threading.Tasks;
     using Xunit;
 
     public class SystemClockTests
@@ -76,6 +77,66 @@ namespace WindyCliffs.Clock.Tests
         public void Sleep_NegativeTimeout()
         {
             Assert.Throws<ArgumentOutOfRangeException>(() => SystemClock.Instance.Sleep(TimeSpan.FromSeconds(-1)));
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(1)]
+        [InlineData(10)]
+        public async Task TaskDelay_NonNegativeTimeout(int timeoutMilliseconds)
+        {
+            await SystemClock.Instance.TaskDelay(
+                TimeSpan.FromMilliseconds(timeoutMilliseconds),
+                TestContext.Current.CancellationToken);
+        }
+
+        [Fact]
+        public async Task TaskDelay_NegativeTimeout()
+        {
+            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+                () => SystemClock.Instance.TaskDelay(TimeSpan.FromSeconds(-1), TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public async Task TaskDelay_AlreadyCancelledToken()
+        {
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            Task delay = SystemClock.Instance.TaskDelay(TimeSpan.FromSeconds(1), cts.Token);
+
+            Assert.True(delay.IsCanceled);
+            await Assert.ThrowsAsync<TaskCanceledException>(() => delay);
+        }
+
+        [Fact]
+        public async Task TaskDelay_CancelledWhileWaiting()
+        {
+            using var cts = new CancellationTokenSource();
+
+            Task delay = SystemClock.Instance.TaskDelay(TimeSpan.FromMinutes(5), cts.Token);
+
+            Assert.False(delay.IsCompleted, "Task completed before cancellation.");
+
+            cts.Cancel();
+
+            await Assert.ThrowsAsync<TaskCanceledException>(() => delay);
+            Assert.True(delay.IsCanceled);
+        }
+
+        [Fact]
+        public async Task TaskDelay_InfiniteTimeout_CancelCompletes()
+        {
+            using var cts = new CancellationTokenSource();
+
+            Task delay = SystemClock.Instance.TaskDelay(Timeout.InfiniteTimeSpan, cts.Token);
+
+            Assert.False(delay.IsCompleted, "Infinite delay completed before cancellation.");
+
+            cts.Cancel();
+
+            await Assert.ThrowsAsync<TaskCanceledException>(() => delay);
+            Assert.True(delay.IsCanceled);
         }
     }
 }

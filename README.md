@@ -48,7 +48,8 @@ Assert.True(session.HasExpired(clock.UtcNow));
 ## Documentation
 
 - [Usage](docs/USAGE.md) — detailed API guide (`SystemClock`, `MockClock`,
-  time advancement, `Sleep` semantics, the `Changed` event, testing patterns).
+  time advancement, `Sleep` and `TaskDelay` semantics, the `Changed` event,
+  testing patterns).
 - [Architecture](docs/ARCHITECTURE.md) — how the abstraction and the
   `MockClock` time-advancement mechanism are designed.
 - [Contributing](CONTRIBUTING.md) — building, testing, and versioning.
