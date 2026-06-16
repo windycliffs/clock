@@ -88,10 +88,10 @@ namespace WindyCliffs.Clock.Tests
             using var cts = new CancellationTokenSource();
             cts.Cancel();
 
+            // CancelAfter on an already-cancelled source finishes early and schedules nothing, so advancing
+            // past the would-be deadline does nothing and must not throw.
             clock.CancelAfter(cts, TimeSpan.FromSeconds(10));
 
-            // Advancing past the deadline calls Cancel() again, which is a harmless no-op on an
-            // already-cancelled source and must not throw.
             var exception = Record.Exception(() => clock.AdvanceBy(TimeSpan.FromSeconds(10)));
 
             Assert.Null(exception);
@@ -209,10 +209,9 @@ namespace WindyCliffs.Clock.Tests
             var clock = new MockClock();
             using var cts = new CancellationTokenSource();
 
-            // Zero cancels immediately; a later positive call schedules an action (stored in the pending
-            // map, since the zero path stores nothing) whose eventual Cancel() is a harmless no-op on the
-            // already-cancelled source. The source cannot be un-cancelled, and advancing to +10s fires that
-            // action cleanly.
+            // Zero cancels immediately; the later positive call sees an already-cancelled source and finishes
+            // early without scheduling anything. The source cannot be un-cancelled, and advancing the clock
+            // afterwards does nothing and must not throw.
             clock.CancelAfter(cts, TimeSpan.Zero);
             clock.CancelAfter(cts, TimeSpan.FromSeconds(10));
 

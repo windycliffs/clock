@@ -1,6 +1,7 @@
 ﻿namespace WindyCliffs.Clock
 {
     using System;
+    using System.Collections.Concurrent;
     using System.Collections.Generic;
     using System.Threading;
     using System.Threading.Tasks;
@@ -22,10 +23,8 @@
 
         private TimeSpan advancementStep = DefaultAdvancementStep;
 
-        private readonly object cancelAfterSyncRoot = new object();
-
-        private readonly Dictionary<CancellationTokenSource, ScheduledAction> pendingCancellations =
-            new Dictionary<CancellationTokenSource, ScheduledAction>();
+        private readonly ConcurrentDictionary<CancellationTokenSource, ScheduledAction> pendingCancellations =
+            new ConcurrentDictionary<CancellationTokenSource, ScheduledAction>();
 
         /// <summary>
         /// Gets or sets the current time on the mock clock in UTC timezone.
@@ -151,19 +150,21 @@
             // Token getter throws ObjectDisposedException on a disposed source. Probe before mutating state.
             _ = source.Token;
 
-            // Reschedule: drop any cancellation still pending for this source so the most recent call's
-            // deadline replaces the earlier one, matching CancellationTokenSource.CancelAfter. Dispose the
-            // previous action *outside* cancelAfterSyncRoot: the fire path takes the action's syncRoot and
-            // then cancelAfterSyncRoot (in the action's finally below), so taking them in the opposite order
-            // here would risk a deadlock. CancelAfter therefore never holds both locks at once.
-            ScheduledAction? previous;
-            lock (this.cancelAfterSyncRoot)
+            // An already-cancelled source has nothing left to schedule, so finish early — mirroring
+            // CancellationTokenSource.CancelAfter, which returns once cancellation has been requested.
+            if (source.IsCancellationRequested)
             {
-                this.pendingCancellations.TryGetValue(source, out previous);
-                this.pendingCancellations.Remove(source);
+                return;
             }
 
-            previous?.Dispose();
+            // Reschedule: drop and dispose any cancellation still pending for this source so the most recent
+            // call's deadline replaces the earlier one, matching CancellationTokenSource.CancelAfter. The
+            // previous action is disposed after TryRemove returns (outside any dictionary operation), so the
+            // fire path — which removes its own entry while holding the action's lock — never contends here.
+            if (this.pendingCancellations.TryRemove(source, out var previous))
+            {
+                previous.Dispose();
+            }
 
             // An infinite timeout schedules nothing, mirroring CancellationTokenSource.CancelAfter, which
             // treats Timeout.InfiniteTimeSpan as "no scheduled cancellation" — so the reschedule above simply
@@ -204,23 +205,16 @@
                 finally
                 {
                     // Remove this action's own entry once it has fired, but only if a concurrent reschedule
-                    // has not already replaced it. Pure reference operations on the (possibly disposed)
-                    // source key — they never touch CTS members, so they cannot throw here.
-                    lock (this.cancelAfterSyncRoot)
-                    {
-                        if (this.pendingCancellations.TryGetValue(source, out ScheduledAction current) &&
-                            ReferenceEquals(current, holder[0]))
-                        {
-                            this.pendingCancellations.Remove(source);
-                        }
-                    }
+                    // has not already replaced it. netstandard2.0 ConcurrentDictionary has no
+                    // TryRemove(key, value) overload, so the ICollection view provides the atomic
+                    // remove-only-if-the-value-still-matches. Pure reference comparison on the (possibly
+                    // disposed) source key — it never touches CTS members, so it cannot throw here.
+                    ((ICollection<KeyValuePair<CancellationTokenSource, ScheduledAction>>)this.pendingCancellations)
+                        .Remove(new KeyValuePair<CancellationTokenSource, ScheduledAction>(source, holder[0]));
                 }
             });
 
-            lock (this.cancelAfterSyncRoot)
-            {
-                this.pendingCancellations[source] = holder[0];
-            }
+            this.pendingCancellations[source] = holder[0];
         }
 
         /// <summary>
