@@ -61,3 +61,7 @@ cd src
 dotnet build repo.slnx
 dotnet test repo.slnx
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).

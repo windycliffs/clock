@@ -65,8 +65,9 @@ Major bump**. This overrides rule 2 above for as long as the project is pre-1.0.
 **Remove this entire subsection once the version reaches `1.0.0`**, after which
 the standard rule 2 (breaking → Major) applies.
 
-Whenever you bump the version, record the change in
-[CHANGELOG.md](CHANGELOG.md) under the `[Unreleased]` section.
+Whenever you bump the version, add a new `## [X.Y.Z]` section at the top of
+[CHANGELOG.md](CHANGELOG.md), with the version matching the one set in
+`src/Directory.Build.props`.
 
 ## Package README
 

@@ -3,8 +3,9 @@
 		<Product>WindyCliffs.Clock</Product>
 		<Company>Windy Cliffs</Company>
 		<Authors>Windy Cliffs</Authors>
-		<Copyright>Copyright © 2023</Copyright>
+		<Copyright>Copyright © 2023 Windy Cliffs</Copyright>
 		<Description>The library for testable time management.</Description>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageProjectUrl>https://github.com/windycliffs/clock</PackageProjectUrl>
 		<RepositoryUrl>https://github.com/windycliffs/clock</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
@@ -13,7 +14,7 @@
 		     Major (see CONTRIBUTING.md "Pre-1.0 versioning"). Remove that note when raising to 1. -->
 		<MajorVersion>0</MajorVersion>
 		<MinorVersion>3</MinorVersion>
-		<Revision>0</Revision>
+		<Revision>1</Revision>
 		<Version>$(MajorVersion).$(MinorVersion).$(Revision)</Version>
 		<AssemblyVersion>$(MajorVersion).0.0.0</AssemblyVersion>
 		<FileVersion>$(Version).0</FileVersion>
