@@ -101,12 +101,12 @@ and `TaskDelay`, but the scheduled action calls `source.Cancel()`:
 
 1. `CancelAfter(source, timeout)` validates its arguments (null `source` throws
    `ArgumentNullException`; a negative non-infinite `timeout` throws
-   `ArgumentOutOfRangeException`) and then probes `source.Token`, which throws
-   `ObjectDisposedException` if the source is **already** disposed — surfacing
-   that programming error synchronously, exactly as the real
-   `CancellationTokenSource.CancelAfter` does. An already-cancelled source then
-   short-circuits (nothing left to schedule), again matching the real method. For
-   `Timeout.InfiniteTimeSpan` it returns without scheduling anything.
+   `ArgumentOutOfRangeException`) and then reads `source.Token.IsCancellationRequested`.
+   The `Token` getter throws `ObjectDisposedException` if the source is **already**
+   disposed — surfacing that programming error synchronously, exactly as the real
+   `CancellationTokenSource.CancelAfter` does — and an already-cancelled token
+   short-circuits (nothing left to schedule). For `Timeout.InfiniteTimeSpan` it
+   returns without scheduling anything.
 2. Otherwise it creates a fire-and-forget `ScheduledAction` targeted at
    `UtcNow + timeout`. A `TimeSpan.Zero` timeout fires synchronously inside the
    `ScheduledAction` constructor (which checks the current time); a positive
@@ -118,17 +118,16 @@ and `TaskDelay`, but the scheduled action calls `source.Cancel()`:
    exception. The catch is deliberately narrow, so errors thrown by
    user-registered cancellation callbacks still surface.
 
-`MockClock` keeps at most one pending cancellation per `source`, in a
-`ConcurrentDictionary` keyed by reference (`CancellationTokenSource` uses
-reference equality). Each call first removes and disposes any cancellation still
-pending for that source, then schedules the new one — so a later call
-**reschedules** an earlier deadline, matching `CancellationTokenSource.CancelAfter`.
-The scheduled action removes its own entry when it fires, using the dictionary's
-atomic remove-only-if-the-value-still-matches so a concurrent reschedule is never
-clobbered. The previous action is disposed only after it has been removed from the
-dictionary, and the dictionary's own operations never call back into user code,
-so there is no lock-ordering hazard against the `ScheduledAction` lock taken on
-the fire path.
+`MockClock` keeps at most one pending cancellation per `source`, in a `Dictionary`
+keyed by reference (`CancellationTokenSource` uses reference equality), guarded by
+a dedicated lock. Each call, **atomically under that lock**, removes any pending
+cancellation for the source and schedules the new one — so a later call
+**reschedules** an earlier deadline (matching `CancellationTokenSource.CancelAfter`)
+with no lost update even under concurrent calls. The scheduled action removes its
+own entry when it fires, but only if a concurrent reschedule has not already
+replaced it. The replaced action is disposed *after* the lock is released: the
+fire path holds the action's own lock while it reacquires the dictionary lock, so
+disposing under the dictionary lock would invert that order and risk a deadlock.
 
 Because `source.Cancel()` runs from a `Changed` handler, registered cancellation
 callbacks run synchronously on the thread driving `AdvanceBy`/`AdvanceTo`,

@@ -1,7 +1,6 @@
 ﻿namespace WindyCliffs.Clock
 {
     using System;
-    using System.Collections.Concurrent;
     using System.Collections.Generic;
     using System.Threading;
     using System.Threading.Tasks;
@@ -23,8 +22,10 @@
 
         private TimeSpan advancementStep = DefaultAdvancementStep;
 
-        private readonly ConcurrentDictionary<CancellationTokenSource, ScheduledAction> pendingCancellations =
-            new ConcurrentDictionary<CancellationTokenSource, ScheduledAction>();
+        private readonly object cancelAfterSyncRoot = new object();
+
+        private readonly Dictionary<CancellationTokenSource, ScheduledAction> pendingCancellations =
+            new Dictionary<CancellationTokenSource, ScheduledAction>();
 
         /// <summary>
         /// Gets or sets the current time on the mock clock in UTC timezone.
@@ -144,77 +145,64 @@
                 throw new ArgumentOutOfRangeException(nameof(timeout), "The time-out value is negative and is not equal to Infinite.");
             }
 
-            // Surface an already-disposed source synchronously, mirroring CancellationTokenSource.CancelAfter:
-            // disposing then calling is a programming error worth raising. Only a source disposed *after* this
-            // call, while the cancellation is still pending, is tolerated (handled in the action below). The
-            // Token getter throws ObjectDisposedException on a disposed source. Probe before mutating state.
-            _ = source.Token;
-
-            // An already-cancelled source has nothing left to schedule, so finish early — mirroring
-            // CancellationTokenSource.CancelAfter, which returns once cancellation has been requested.
-            if (source.IsCancellationRequested)
+            // The Token getter throws ObjectDisposedException on a disposed source (a programming error);
+            // an already-cancelled token leaves nothing to schedule, mirroring CancellationTokenSource.CancelAfter.
+            if (source.Token.IsCancellationRequested)
             {
                 return;
             }
 
-            // Reschedule: drop and dispose any cancellation still pending for this source so the most recent
-            // call's deadline replaces the earlier one, matching CancellationTokenSource.CancelAfter. The
-            // previous action is disposed after TryRemove returns (outside any dictionary operation), so the
-            // fire path — which removes its own entry while holding the action's lock — never contends here.
-            if (this.pendingCancellations.TryRemove(source, out var previous))
+            // Replace any cancellation pending for this source under one lock so the latest deadline wins
+            // even under concurrent calls. The holder lets the scheduled action find its own map entry.
+            var holder = new ScheduledAction[1];
+            ScheduledAction? previous;
+            lock (this.cancelAfterSyncRoot)
             {
-                previous.Dispose();
+                this.pendingCancellations.TryGetValue(source, out previous);
+                this.pendingCancellations.Remove(source);
+
+                // Infinite schedules nothing; zero is cancelled below. A positive timeout never fires inside
+                // the constructor (its target is in the future), so holder[0] is assigned before it can run.
+                if (timeout != Timeout.InfiniteTimeSpan && timeout != TimeSpan.Zero)
+                {
+                    holder[0] = new ScheduledAction(this, this.UtcNow + timeout, () => this.CancelScheduled(source, holder[0]));
+                    this.pendingCancellations[source] = holder[0];
+                }
             }
 
-            // An infinite timeout schedules nothing, mirroring CancellationTokenSource.CancelAfter, which
-            // treats Timeout.InfiniteTimeSpan as "no scheduled cancellation" — so the reschedule above simply
-            // cancels the previous pending cancellation.
-            if (timeout == Timeout.InfiniteTimeSpan)
-            {
-                return;
-            }
-
-            // A zero timeout cancels immediately and stores nothing: the ScheduledAction would fire inside
-            // its own constructor (it checks the current time), so storing it would leave an already-fired,
-            // disposed entry in the map. The source is not disposed (probed above), so Cancel cannot throw
-            // ObjectDisposedException here.
+            // Done outside the lock: Dispose takes the replaced action's lock, which the fire path holds
+            // while it reacquires cancelAfterSyncRoot, so disposing under the lock would risk a deadlock.
+            previous?.Dispose();
             if (timeout == TimeSpan.Zero)
             {
                 source.Cancel();
-                return;
             }
+        }
 
-            // Single-element holder so the action can reference its own ScheduledAction (to remove its map
-            // entry on fire) without a null-capture warning. The ScheduledAction constructor checks the time
-            // synchronously, so it fires inside the constructor only when the target is already due; for a
-            // positive (future) timeout it does not fire here, so holder[0] is fully assigned before the
-            // action can run or be observed via pendingCancellations.
-            var holder = new ScheduledAction[1];
-            holder[0] = new ScheduledAction(this, this.UtcNow + timeout, () =>
+        private void CancelScheduled(CancellationTokenSource source, ScheduledAction self)
+        {
+            try
             {
-                try
+                source.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Disposed before its deadline; nothing to cancel. The catch is narrow so a throwing
+                // cancellation callback still surfaces to the AdvanceBy/AdvanceTo caller.
+            }
+            finally
+            {
+                // Remove this fired action's entry, unless a concurrent reschedule already replaced it (the
+                // replacement may briefly coexist with this still-disposing action).
+                lock (this.cancelAfterSyncRoot)
                 {
-                    source.Cancel();
+                    if (this.pendingCancellations.TryGetValue(source, out ScheduledAction current) &&
+                        ReferenceEquals(current, self))
+                    {
+                        this.pendingCancellations.Remove(source);
+                    }
                 }
-                catch (ObjectDisposedException)
-                {
-                    // The source was disposed before the deadline was reached; there is nothing to cancel.
-                    // The catch is intentionally narrow: any other exception (e.g. one thrown by a
-                    // user-registered cancellation callback) propagates to the AdvanceBy/AdvanceTo caller.
-                }
-                finally
-                {
-                    // Remove this action's own entry once it has fired, but only if a concurrent reschedule
-                    // has not already replaced it. netstandard2.0 ConcurrentDictionary has no
-                    // TryRemove(key, value) overload, so the ICollection view provides the atomic
-                    // remove-only-if-the-value-still-matches. Pure reference comparison on the (possibly
-                    // disposed) source key — it never touches CTS members, so it cannot throw here.
-                    ((ICollection<KeyValuePair<CancellationTokenSource, ScheduledAction>>)this.pendingCancellations)
-                        .Remove(new KeyValuePair<CancellationTokenSource, ScheduledAction>(source, holder[0]));
-                }
-            });
-
-            this.pendingCancellations[source] = holder[0];
+            }
         }
 
         /// <summary>
