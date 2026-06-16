@@ -56,10 +56,11 @@ Assert.True(session.HasExpired(clock.UtcNow));
 | `UtcNow` | The current time (UTC). Replacement for `DateTimeOffset.UtcNow`. |
 | `Sleep(timeout)` | Blocks the caller. Replacement for `Thread.Sleep`. |
 | `TaskDelay(timeout, cancellationToken)` | Awaitable, cancellable delay. Replacement for `Task.Delay`. |
+| `CancelAfter(source, timeout)` | Cancels a `CancellationTokenSource` after the timeout. Replacement for `CancellationTokenSource.CancelAfter`. |
 
-With `MockClock`, both `Sleep` and `TaskDelay` are released by advancing the
-clock (`AdvanceBy`/`AdvanceTo`) rather than by real elapsed time, so
-time-dependent code — including `async` code — stays deterministic:
+With `MockClock`, `Sleep`, `TaskDelay`, and `CancelAfter` are all driven by
+advancing the clock (`AdvanceBy`/`AdvanceTo`) rather than by real elapsed time,
+so time-dependent code — including `async` code — stays deterministic:
 
 ```csharp
 var clock = new MockClock();

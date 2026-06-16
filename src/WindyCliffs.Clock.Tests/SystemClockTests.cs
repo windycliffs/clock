@@ -138,5 +138,36 @@ namespace WindyCliffs.Clock.Tests
             await Assert.ThrowsAsync<TaskCanceledException>(() => delay);
             Assert.True(delay.IsCanceled);
         }
+
+        [Fact]
+        public void CancelAfter_NullSource()
+        {
+            Assert.Throws<ArgumentNullException>(
+                () => SystemClock.Instance.CancelAfter(null!, TimeSpan.FromSeconds(1)));
+        }
+
+        [Fact]
+        public void CancelAfter_NegativeTimeout()
+        {
+            using var cts = new CancellationTokenSource();
+
+            Assert.Throws<ArgumentOutOfRangeException>(
+                () => SystemClock.Instance.CancelAfter(cts, TimeSpan.FromSeconds(-1)));
+        }
+
+        [Fact]
+        public void CancelAfter_CancelsAfterDelay()
+        {
+            using var cts = new CancellationTokenSource();
+
+            SystemClock.Instance.CancelAfter(cts, TimeSpan.FromMilliseconds(50));
+
+            int signaled = WaitHandle.WaitAny(
+                new[] { cts.Token.WaitHandle, TestContext.Current.CancellationToken.WaitHandle },
+                TimeSpan.FromSeconds(5));
+
+            Assert.Equal(0, signaled);
+            Assert.True(cts.IsCancellationRequested);
+        }
     }
 }

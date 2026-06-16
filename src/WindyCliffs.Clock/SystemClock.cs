@@ -25,5 +25,18 @@
         /// <inheritdoc />
         public Task TaskDelay(TimeSpan timeout, CancellationToken cancellationToken = default)
             => Task.Delay(timeout, cancellationToken);
+
+        /// <inheritdoc />
+        public void CancelAfter(CancellationTokenSource source, TimeSpan timeout)
+        {
+            // Enforce the IClock contract's ArgumentNullException; a bare delegate on a null receiver
+            // would throw NullReferenceException instead.
+            if (source is null)
+            {
+                throw new ArgumentNullException(nameof(source));
+            }
+
+            source.CancelAfter(timeout);
+        }
     }
 }

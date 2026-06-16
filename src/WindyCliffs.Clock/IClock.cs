@@ -54,5 +54,35 @@
         /// <see cref="Timeout.InfiniteTimeSpan"/>.
         /// </exception>
         Task TaskDelay(TimeSpan timeout, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Schedules the cancellation of the given <see cref="CancellationTokenSource"/> after the
+        /// specified amount of time elapses.
+        /// Replacement for <see cref="CancellationTokenSource.CancelAfter(TimeSpan)"/>.
+        /// </summary>
+        /// <param name="source">The cancellation token source to cancel once the timeout elapses.</param>
+        /// <param name="timeout">
+        /// The amount of time to wait before cancelling <paramref name="source"/>. A value of
+        /// <see cref="TimeSpan.Zero"/> requests cancellation immediately. A value of
+        /// <see cref="Timeout.InfiniteTimeSpan"/> disables the scheduled cancellation, so
+        /// <paramref name="source"/> is never cancelled by this call.
+        /// </param>
+        /// <remarks>
+        /// A <paramref name="source"/> that is disposed <em>after</em> this call returns, while the
+        /// cancellation is still pending, is tolerated: the pending cancellation is silently dropped. A
+        /// <paramref name="source"/> that is <em>already</em> disposed when this method is called is a
+        /// programming error and throws <see cref="ObjectDisposedException"/>.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException">
+        /// When <paramref name="source"/> is <see langword="null"/>.
+        /// </exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// When <paramref name="timeout"/> is negative and is not equal to
+        /// <see cref="Timeout.InfiniteTimeSpan"/>.
+        /// </exception>
+        /// <exception cref="ObjectDisposedException">
+        /// When <paramref name="source"/> has already been disposed.
+        /// </exception>
+        void CancelAfter(CancellationTokenSource source, TimeSpan timeout);
     }
 }

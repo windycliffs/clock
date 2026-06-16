@@ -49,6 +49,8 @@ The operating-system clock:
 - `SystemClock.Instance.Sleep(timeout)` delegates to `Thread.Sleep(timeout)`.
 - `SystemClock.Instance.TaskDelay(timeout, cancellationToken)` delegates to
   `Task.Delay(timeout, cancellationToken)`.
+- `SystemClock.Instance.CancelAfter(source, timeout)` delegates to
+  `source.CancelAfter(timeout)`.
 
 Use it in production; use `MockClock` in tests.
 
@@ -163,3 +165,44 @@ clock.AdvanceBy(TimeSpan.FromSeconds(30));
 
 await delay; // completes immediately
 ```
+
+### `CancelAfter` semantics
+
+`MockClock.CancelAfter` schedules the cancellation of a
+`CancellationTokenSource` and, like `Sleep` and `TaskDelay`, is driven by time
+advancement rather than wall-clock time:
+
+| `timeout`                   | Behaviour                                                                                          |
+| --------------------------- | -------------------------------------------------------------------------------------------------- |
+| `TimeSpan.Zero`             | Cancels `source` immediately (synchronously, during the call).                                     |
+| Positive, finite            | Cancels `source` once the clock is advanced to `UtcNow + timeout`.                                 |
+| `Timeout.InfiniteTimeSpan`  | Schedules nothing; `source` is never cancelled by this call, no matter how far the clock advances. |
+| Negative (and not infinite) | Throws `ArgumentOutOfRangeException`.                                                               |
+
+A `null` `source` throws `ArgumentNullException`.
+
+Disposal is handled the same way as the real `CancellationTokenSource.CancelAfter`:
+
+- If `source` is disposed **after** the call, while the cancellation is still
+  pending, the pending cancellation is silently dropped — advancing the clock
+  past the deadline does **not** throw `ObjectDisposedException`.
+- If `source` is **already** disposed when `CancelAfter` is called, that is a
+  programming error and throws `ObjectDisposedException` synchronously.
+
+A pending cancellation is triggered by advancing the clock, on the same thread:
+
+```csharp
+var clock = new MockClock();
+using var cts = new CancellationTokenSource();
+
+clock.CancelAfter(cts, TimeSpan.FromSeconds(30));
+
+// The source is not cancelled until we move time forward:
+clock.AdvanceBy(TimeSpan.FromSeconds(30));
+
+Assert.True(cts.IsCancellationRequested);
+```
+
+Each call schedules an independent cancellation rather than rescheduling a
+previous one, so the earliest deadline reached cancels the source; later
+scheduled cancellations then become harmless no-ops.
