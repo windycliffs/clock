@@ -13,8 +13,8 @@
 		<!-- Pre-1.0 exception active: while MajorVersion is 0, breaking changes do NOT bump
 		     Major (see CONTRIBUTING.md "Pre-1.0 versioning"). Remove that note when raising to 1. -->
 		<MajorVersion>0</MajorVersion>
-		<MinorVersion>3</MinorVersion>
-		<Revision>1</Revision>
+		<MinorVersion>4</MinorVersion>
+		<Revision>0</Revision>
 		<Version>$(MajorVersion).$(MinorVersion).$(Revision)</Version>
 		<AssemblyVersion>$(MajorVersion).0.0.0</AssemblyVersion>
 		<FileVersion>$(Version).0</FileVersion>

@@ -125,6 +125,53 @@
             return completion.Task;
         }
 
+        /// <inheritdoc />
+        public void CancelAfter(CancellationTokenSource source, TimeSpan timeout)
+        {
+            // Guard order mirrors TaskDelay: reference-type precondition first, then the timeout range.
+            if (source is null)
+            {
+                throw new ArgumentNullException(nameof(source));
+            }
+
+            if (timeout < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan)
+            {
+                throw new ArgumentOutOfRangeException(nameof(timeout), "The time-out value is negative and is not equal to Infinite.");
+            }
+
+            // Surface an already-disposed source synchronously, mirroring CancellationTokenSource.CancelAfter:
+            // disposing then calling is a programming error worth raising. Only a source disposed *after* this
+            // call, while the cancellation is still pending, is tolerated (handled in the action below). The
+            // Token getter throws ObjectDisposedException on a disposed source.
+            _ = source.Token;
+
+            // An infinite timeout schedules nothing, mirroring CancellationTokenSource.CancelAfter, which
+            // treats Timeout.InfiniteTimeSpan as "no scheduled cancellation".
+            if (timeout == Timeout.InfiniteTimeSpan)
+            {
+                return;
+            }
+
+            // Fire-and-forget: the ScheduledAction self-disposes once it cancels the source, so no local
+            // reference is kept (hence the discard). For a zero timeout the action fires synchronously
+            // inside the constructor (it checks the current time); for a positive timeout it fires when
+            // the clock advances to UtcNow + timeout. The catch lives inside the action so it covers both
+            // paths; it is narrowed to ObjectDisposedException so that a source disposed while the
+            // cancellation is pending is tolerated, while errors thrown by user-registered cancellation
+            // callbacks still surface.
+            _ = new ScheduledAction(this, this.UtcNow + timeout, () =>
+            {
+                try
+                {
+                    source.Cancel();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // The source was disposed before the deadline was reached; there is nothing to cancel.
+                }
+            });
+        }
+
         /// <summary>
         /// Gets or sets the advancement step used by <see cref="AdvanceBy(TimeSpan)"/> and
         /// <see cref="AdvanceTo(DateTimeOffset)"/> methods.
