@@ -117,20 +117,30 @@ and `TaskDelay`, but the scheduled action calls `source.Cancel()`:
    exception. The catch is deliberately narrow, so errors thrown by
    user-registered cancellation callbacks still surface.
 
+`MockClock` keeps at most one pending cancellation per `source`, in a dictionary
+keyed by reference (`CancellationTokenSource` uses reference equality). Each call
+first removes and disposes any cancellation still pending for that source, then
+schedules the new one — so a later call **reschedules** an earlier deadline,
+matching `CancellationTokenSource.CancelAfter`. The scheduled action removes its
+own map entry when it fires. The previous action is disposed *outside* the
+dictionary's lock: the fire path takes the action's lock and then the dictionary
+lock (when the action removes its own entry), so disposing under the dictionary
+lock would invert that order; `CancelAfter` therefore never holds both locks at
+once.
+
 Because `source.Cancel()` runs from a `Changed` handler, registered cancellation
 callbacks run synchronously on the thread driving `AdvanceBy`/`AdvanceTo`,
 consistent with how `MockClock` raises `Changed` in general.
 
-Two intentional simplifications, appropriate for a test double:
+One intentional limitation, appropriate for a test double:
 
-- Each call schedules an **independent** cancellation rather than rescheduling a
-  previous one, so the earliest deadline reached cancels the source and later
-  scheduled cancellations become harmless no-ops.
 - A `CancelAfter` whose deadline is never reached leaves one `ScheduledAction`
-  subscribed to `Changed` for the clock's lifetime (holding the source closure);
-  it is released only when the deadline is reached or the `MockClock` is
-  collected. There is no disposal hook on `CancellationTokenSource` to key off,
-  and this mirrors a real pending `CancelAfter` timer.
+  subscribed to `Changed` (and one dictionary entry) for the clock's lifetime,
+  holding the source closure; it is released only when the deadline is reached,
+  the cancellation is rescheduled, or the `MockClock` is collected. `MockClock`
+  does not implement `IDisposable`, so there is no deterministic cleanup hook —
+  this mirrors a real pending `CancelAfter` timer and is acceptable for a clock
+  whose lifetime is a single test.
 
 ## Target frameworks and build layout
 

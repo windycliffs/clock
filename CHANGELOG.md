@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.4.1]
+
+### Fixed
+- `MockClock.CancelAfter` now reschedules when called more than once on the same
+  `CancellationTokenSource`: the most recent call's timeout replaces any
+  still-pending one, matching `SystemClock` / `CancellationTokenSource.CancelAfter`.
+  Previously each call scheduled an independent cancellation, so the earliest
+  deadline incorrectly won.
+
 ## [0.4.0]
 
 ### Added
