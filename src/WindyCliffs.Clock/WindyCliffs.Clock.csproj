@@ -8,6 +8,12 @@
 		<PackageId>WindyCliffs.Clock</PackageId>
 		<PackageVersion>$(Version)</PackageVersion>
 		<PackageTags>clock, dependency injection, test, mock</PackageTags>
+		<!-- README is library-project-relative, so it lives here rather than in Directory.Build.props. -->
+		<PackageReadmeFile>README.md</PackageReadmeFile>
 	</PropertyGroup>
+
+	<ItemGroup>
+		<None Include="README.md" Pack="true" PackagePath="/" />
+	</ItemGroup>
 
 </Project>

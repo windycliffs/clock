@@ -28,4 +28,14 @@ jobs:
     - name: Pack nugets
       run: dotnet pack -c Release --no-build WindyCliffs.Clock/WindyCliffs.Clock.csproj --output out/
     - name: Push to NuGet
-      run: dotnet nuget push out/*.nupkg --api-key ${{secrets.nuget_publish}} --source https://api.nuget.org/v3/index.json
+      shell: pwsh
+      # Pass the API key via env (kept out of the command-line argument vector).
+      env:
+        NUGET_API_KEY: ${{ secrets.nuget_publish }}
+      # Resolve the package explicitly: dotnet nuget push does not expand the
+      # out/*.nupkg wildcard, and PowerShell passes it through literally on the
+      # Windows runner. (Get-ChildItem runs relative to working-directory: src.)
+      run: |
+        $package = Get-ChildItem -Path out -Filter *.nupkg | Select-Object -First 1
+        if (-not $package) { throw "No .nupkg found in out/." }
+        dotnet nuget push $package.FullName --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json --skip-duplicate

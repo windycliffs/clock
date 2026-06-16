@@ -29,14 +29,16 @@ The package version is **not** edited in the `.csproj`. It is assembled in
 `src/Directory.Build.props` from three properties:
 
 ```xml
-<MajorVersion>0</MajorVersion>
-<MinorVersion>2</MinorVersion>
-<Revision>0</Revision>
+<MajorVersion>…</MajorVersion>
+<MinorVersion>…</MinorVersion>
+<Revision>…</Revision>
 ```
 
-These drive `Version`, `AssemblyVersion`, and `FileVersion`, and the library
-csproj reuses `Version` as the NuGet `PackageVersion`. To change the published
-version, bump the appropriate property here.
+(The above shows the structure only — the authoritative current values live in
+[`src/Directory.Build.props`](src/Directory.Build.props).) These drive `Version`,
+`AssemblyVersion`, and `FileVersion`, and the library csproj reuses `Version` as
+the NuGet `PackageVersion`. To change the published version, bump the appropriate
+property there.
 
 Apply these rules when deciding what to bump:
 
@@ -65,6 +67,21 @@ the standard rule 2 (breaking → Major) applies.
 
 Whenever you bump the version, record the change in
 [CHANGELOG.md](CHANGELOG.md) under the `[Unreleased]` section.
+
+## Package README
+
+The NuGet package ships a README that is rendered on nuget.org. It is a separate
+file from the repository-root `README.md` (which targets GitHub readers):
+
+- **Location:** `src/WindyCliffs.Clock/README.md`.
+- **How it is included:** `WindyCliffs.Clock.csproj` sets
+  `<PackageReadmeFile>README.md</PackageReadmeFile>` and packs the file via a
+  `<None Include="README.md" Pack="true" PackagePath="/" />` item. The file must
+  exist at build time — `GeneratePackageOnBuild` packs it during `dotnet build`,
+  so a missing or misnamed file fails the build with `NU5039`.
+- **When to update:** keep it current whenever the public API or recommended
+  usage changes, so consumers browsing nuget.org see accurate guidance. It is
+  aimed at external consumers — keep it concise and example-led.
 
 ## Releasing
 
