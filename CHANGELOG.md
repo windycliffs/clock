@@ -7,6 +7,9 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- `IClock.TaskDelay(TimeSpan, CancellationToken)` with `SystemClock` (delegates
+  to `Task.Delay`) and `MockClock` (driven by the existing `AdvanceBy`/`AdvanceTo`
+  time-advancement machinery, and cancellable) implementations.
 - `global.json` pinning the .NET 10 SDK band, `Directory.Build.targets`, and
   `Directory.Packages.props` enabling Central Package Management.
 - `CHANGELOG.md`, `CONTRIBUTING.md`, and `AGENTS.md` at the repository root.

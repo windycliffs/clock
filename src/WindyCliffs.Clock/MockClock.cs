@@ -2,6 +2,7 @@
 {
     using System;
     using System.Threading;
+    using System.Threading.Tasks;
 
     /// <summary>
     /// The mock clock completely controlled by code that can be used to implement deterministic tests
@@ -65,6 +66,63 @@
             using var scheduledAction = new ScheduledAction(this, this.UtcNow + timeout, () => waiter.Set());
 
             waiter.Wait();
+        }
+
+        /// <inheritdoc />
+        public Task TaskDelay(TimeSpan timeout, CancellationToken cancellationToken = default)
+        {
+            // Guard order mirrors Task.Delay (not Sleep): validate the timeout first, then honour an
+            // already-cancelled token, then the zero short-circuit. So TaskDelay(negative, cancelledToken)
+            // throws synchronously, exactly as Task.Delay does.
+            if (timeout < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan)
+            {
+                throw new ArgumentOutOfRangeException(nameof(timeout), "The time-out value is negative and is not equal to Infinite.");
+            }
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return Task.FromCanceled(cancellationToken);
+            }
+
+            if (timeout == TimeSpan.Zero)
+            {
+                return Task.CompletedTask;
+            }
+
+            // The non-generic TaskCompletionSource is .NET 5+; on netstandard2.0 only the generic form
+            // exists. The resulting Task<bool> is returned as a plain Task (covariant, harmless).
+            // RunContinuationsAsynchronously keeps user continuations off the thread driving AdvanceBy/
+            // AdvanceTo, which fires the ScheduledAction synchronously inside the Changed handler.
+            var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            // An infinite delay schedules nothing; only cancellation can complete it.
+            ScheduledAction? scheduledAction = timeout == Timeout.InfiniteTimeSpan
+                ? null
+                : new ScheduledAction(this, this.UtcNow + timeout, () => completion.TrySetResult(true));
+
+            // A token from a CancellationTokenSource can be cancelled; CancellationToken.None — the
+            // default when no token is supplied — never can, so there is nothing to register against.
+            if (cancellationToken.CanBeCanceled)
+            {
+                CancellationTokenRegistration registration = cancellationToken.Register(() =>
+                {
+                    scheduledAction?.Dispose();
+                    completion.TrySetCanceled(cancellationToken);
+                });
+
+                // Release the registration once the delay settles, so a long-lived token does not retain
+                // the closure. (For an infinite delay that is never cancelled the registration lives as
+                // long as the token, matching Task.Delay's own behaviour.) The completion source uses
+                // RunContinuationsAsynchronously, so this cleanup never runs on the advancing thread.
+                completion.Task.ContinueWith(
+                    (_, state) => ((CancellationTokenRegistration)state!).Dispose(),
+                    registration,
+                    CancellationToken.None,
+                    TaskContinuationOptions.None,
+                    TaskScheduler.Default);
+            }
+
+            return completion.Task;
         }
 
         /// <summary>
@@ -183,8 +241,14 @@
 
             public void Dispose()
             {
-                this.isDisposed = true;
-                this.clock.Changed -= this.ClockChanged;
+                // Serialise with ClockChanged so setting the flag and unsubscribing are atomic with the
+                // guarded check. TaskDelay may call this from a cancellation callback concurrently with a
+                // clock advancement; the in-fire-path call (from ClockChanged) re-enters the lock safely.
+                lock (this.syncRoot)
+                {
+                    this.isDisposed = true;
+                    this.clock.Changed -= this.ClockChanged;
+                }
             }
 
             private void ClockChanged(MockClock clock, DateTimeOffset utcNow)

@@ -14,6 +14,7 @@ public interface IClock
 {
     DateTimeOffset UtcNow { get; }
     void Sleep(TimeSpan timeout);
+    Task TaskDelay(TimeSpan timeout, CancellationToken cancellationToken = default);
 }
 ```
 
@@ -29,6 +30,7 @@ stateless singleton exposed through `SystemClock.Instance`:
 
 - `UtcNow` returns `DateTimeOffset.UtcNow`.
 - `Sleep(timeout)` delegates to `Thread.Sleep(timeout)`.
+- `TaskDelay(timeout, cancellationToken)` delegates to `Task.Delay(timeout, cancellationToken)`.
 
 ### `MockClock`
 
@@ -62,6 +64,31 @@ the clock's `Changed` event through a private `ScheduledAction`:
 `Sleep(Timeout.InfiniteTimeSpan)` is the one exception: it calls
 `Thread.Sleep(Timeout.InfiniteTimeSpan)` and blocks the real OS thread forever.
 It is **not** released by clock advancement — only a thread interrupt ends it.
+
+## How `MockClock.TaskDelay` works
+
+`MockClock.TaskDelay` is the asynchronous sibling of `Sleep` and uses the same
+`ScheduledAction` mechanism, but instead of signalling a `ManualResetEventSlim`
+it completes a `TaskCompletionSource`:
+
+1. `TaskDelay(timeout, cancellationToken)` validates the timeout (negative
+   non-infinite throws `ArgumentOutOfRangeException`), returns an already-cancelled
+   task if the token is already cancelled, and returns a completed task for
+   `TimeSpan.Zero`.
+2. For a finite positive timeout it creates a `TaskCompletionSource` and a
+   `ScheduledAction` targeted at `UtcNow + timeout`; when the clock advances past
+   the target the action completes the task. The source is created with
+   `TaskCreationOptions.RunContinuationsAsynchronously` so that user continuations
+   do **not** run on the thread driving `AdvanceBy`/`AdvanceTo` (the `Changed`
+   handler fires synchronously during advancement).
+3. If the token can be cancelled, a registration disposes the `ScheduledAction`
+   and cancels the task when the token fires; the registration is released once
+   the task settles. The first of completion/cancellation wins (both use
+   `TrySet*`).
+
+Unlike infinite `Sleep` — which blocks a real OS thread that only a thread
+interrupt can release — `TaskDelay(Timeout.InfiniteTimeSpan)` schedules nothing
+and is released only by cancelling the token, never by advancing the clock.
 
 ## Target frameworks and build layout
 
