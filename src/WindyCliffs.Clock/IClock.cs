@@ -68,10 +68,17 @@
         /// <paramref name="source"/> is never cancelled by this call.
         /// </param>
         /// <remarks>
+        /// <para>
+        /// Calling this method again with the same <paramref name="source"/> reschedules the cancellation:
+        /// the most recent call's <paramref name="timeout"/> replaces any still-pending one, consistent with
+        /// <see cref="CancellationTokenSource.CancelAfter(TimeSpan)"/>.
+        /// </para>
+        /// <para>
         /// A <paramref name="source"/> that is disposed <em>after</em> this call returns, while the
         /// cancellation is still pending, is tolerated: the pending cancellation is silently dropped. A
         /// <paramref name="source"/> that is <em>already</em> disposed when this method is called is a
         /// programming error and throws <see cref="ObjectDisposedException"/>.
+        /// </para>
         /// </remarks>
         /// <exception cref="ArgumentNullException">
         /// When <paramref name="source"/> is <see langword="null"/>.

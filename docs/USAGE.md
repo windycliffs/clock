@@ -203,6 +203,10 @@ clock.AdvanceBy(TimeSpan.FromSeconds(30));
 Assert.True(cts.IsCancellationRequested);
 ```
 
-Each call schedules an independent cancellation rather than rescheduling a
-previous one, so the earliest deadline reached cancels the source; later
-scheduled cancellations then become harmless no-ops.
+Calling `CancelAfter` again with the same `source` **reschedules** the
+cancellation: the most recent call's timeout replaces any still-pending one,
+exactly as `CancellationTokenSource.CancelAfter` does. Rescheduling to
+`Timeout.InfiniteTimeSpan` cancels the pending schedule without setting a new
+one. (A source that has already been cancelled cannot be un-cancelled, so
+rescheduling has a visible effect only while the earlier deadline is still
+pending.)

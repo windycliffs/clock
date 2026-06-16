@@ -16,4 +16,9 @@
 		<None Include="README.md" Pack="true" PackagePath="/" />
 	</ItemGroup>
 
+	<ItemGroup>
+		<!-- Expose internal types (ScheduledAction, ScheduledCancellationCollection) for unit testing. -->
+		<InternalsVisibleTo Include="WindyCliffs.Clock.Tests" />
+	</ItemGroup>
+
 </Project>

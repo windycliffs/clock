@@ -21,6 +21,16 @@
 
         private TimeSpan advancementStep = DefaultAdvancementStep;
 
+        private readonly ScheduledCancellationCollection scheduledCancellations;
+
+        /// <summary>
+        /// Initialises a new instance of the <see cref="MockClock"/> class.
+        /// </summary>
+        public MockClock()
+        {
+            this.scheduledCancellations = new ScheduledCancellationCollection(this);
+        }
+
         /// <summary>
         /// Gets or sets the current time on the mock clock in UTC timezone.
         /// </summary>
@@ -139,37 +149,14 @@
                 throw new ArgumentOutOfRangeException(nameof(timeout), "The time-out value is negative and is not equal to Infinite.");
             }
 
-            // Surface an already-disposed source synchronously, mirroring CancellationTokenSource.CancelAfter:
-            // disposing then calling is a programming error worth raising. Only a source disposed *after* this
-            // call, while the cancellation is still pending, is tolerated (handled in the action below). The
-            // Token getter throws ObjectDisposedException on a disposed source.
-            _ = source.Token;
-
-            // An infinite timeout schedules nothing, mirroring CancellationTokenSource.CancelAfter, which
-            // treats Timeout.InfiniteTimeSpan as "no scheduled cancellation".
-            if (timeout == Timeout.InfiniteTimeSpan)
+            // The Token getter throws ObjectDisposedException on a disposed source (a programming error);
+            // an already-cancelled token leaves nothing to schedule, mirroring CancellationTokenSource.CancelAfter.
+            if (source.Token.IsCancellationRequested)
             {
                 return;
             }
 
-            // Fire-and-forget: the ScheduledAction self-disposes once it cancels the source, so no local
-            // reference is kept (hence the discard). For a zero timeout the action fires synchronously
-            // inside the constructor (it checks the current time); for a positive timeout it fires when
-            // the clock advances to UtcNow + timeout. The catch lives inside the action so it covers both
-            // paths; it is narrowed to ObjectDisposedException so that a source disposed while the
-            // cancellation is pending is tolerated, while errors thrown by user-registered cancellation
-            // callbacks still surface.
-            _ = new ScheduledAction(this, this.UtcNow + timeout, () =>
-            {
-                try
-                {
-                    source.Cancel();
-                }
-                catch (ObjectDisposedException)
-                {
-                    // The source was disposed before the deadline was reached; there is nothing to cancel.
-                }
-            });
+            this.scheduledCancellations.AddOrReplace(source, timeout);
         }
 
         /// <summary>
@@ -261,57 +248,6 @@
             }
 
             this.UtcNow = newTime;
-        }
-
-        private class ScheduledAction : IDisposable
-        {
-            private readonly MockClock clock;
-
-            private readonly DateTimeOffset onOrAfter;
-
-            private readonly Action action;
-
-            private readonly object syncRoot = new object();
-
-            private volatile bool isDisposed = false;
-
-            public ScheduledAction(MockClock clock, DateTimeOffset onOrAfter, Action action)
-            {
-                this.clock = clock;
-                this.onOrAfter = onOrAfter;
-                this.action = action;
-
-                this.clock.Changed += this.ClockChanged;
-
-                this.ClockChanged(this.clock, this.clock.UtcNow);
-            }
-
-            public void Dispose()
-            {
-                // Serialise with ClockChanged so setting the flag and unsubscribing are atomic with the
-                // guarded check. TaskDelay may call this from a cancellation callback concurrently with a
-                // clock advancement; the in-fire-path call (from ClockChanged) re-enters the lock safely.
-                lock (this.syncRoot)
-                {
-                    this.isDisposed = true;
-                    this.clock.Changed -= this.ClockChanged;
-                }
-            }
-
-            private void ClockChanged(MockClock clock, DateTimeOffset utcNow)
-            {
-                if (!this.isDisposed && utcNow >= this.onOrAfter)
-                {
-                    lock (this.syncRoot)
-                    {
-                        if (!this.isDisposed)
-                        {
-                            this.action.Invoke();
-                            this.Dispose();
-                        }
-                    }
-                }
-            }
         }
     }
 }

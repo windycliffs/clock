@@ -52,7 +52,9 @@ it explicitly, which makes time-dependent behaviour deterministic.
 ## How `MockClock.Sleep` works
 
 `MockClock.Sleep` does not block on wall-clock time. Instead it cooperates with
-the clock's `Changed` event through a private `ScheduledAction`:
+the clock's `Changed` event through an internal `ScheduledAction` (a small helper
+class, shared by `Sleep`, `TaskDelay`, and `CancelAfter`, that runs an action once
+the clock reaches a target time and then unsubscribes):
 
 1. `Sleep(timeout)` validates the timeout (zero returns immediately; a negative
    non-infinite value throws `ArgumentOutOfRangeException`).
@@ -96,41 +98,52 @@ and is released only by cancelling the token, never by advancing the clock.
 
 ## How `MockClock.CancelAfter` works
 
-`MockClock.CancelAfter` reuses the same `ScheduledAction` mechanism as `Sleep`
-and `TaskDelay`, but the scheduled action calls `source.Cancel()`:
+`MockClock.CancelAfter` validates its arguments, then delegates the scheduling to
+an internal `ScheduledCancellationCollection`:
 
 1. `CancelAfter(source, timeout)` validates its arguments (null `source` throws
    `ArgumentNullException`; a negative non-infinite `timeout` throws
-   `ArgumentOutOfRangeException`) and then probes `source.Token`, which throws
-   `ObjectDisposedException` if the source is **already** disposed — surfacing
-   that programming error synchronously, exactly as the real
-   `CancellationTokenSource.CancelAfter` does. For `Timeout.InfiniteTimeSpan` it
-   returns without scheduling anything.
-2. Otherwise it creates a fire-and-forget `ScheduledAction` targeted at
-   `UtcNow + timeout`. A `TimeSpan.Zero` timeout fires synchronously inside the
-   `ScheduledAction` constructor (which checks the current time); a positive
-   timeout fires when the clock is advanced past the target. The action cancels
-   `source` and the `ScheduledAction` self-disposes.
-3. The `source.Cancel()` call is wrapped in a `try`/`catch (ObjectDisposedException)`
-   so that a source disposed **after** the call, while the cancellation is still
-   pending, is handled gracefully — advancing the clock does not propagate the
-   exception. The catch is deliberately narrow, so errors thrown by
-   user-registered cancellation callbacks still surface.
+   `ArgumentOutOfRangeException`) and then reads `source.Token.IsCancellationRequested`.
+   The `Token` getter throws `ObjectDisposedException` if the source is **already**
+   disposed — surfacing that programming error synchronously, exactly as the real
+   `CancellationTokenSource.CancelAfter` does — and an already-cancelled token
+   short-circuits (nothing left to schedule).
+2. It then calls `ScheduledCancellationCollection.AddOrReplace(source, timeout)`.
 
-Because `source.Cancel()` runs from a `Changed` handler, registered cancellation
-callbacks run synchronously on the thread driving `AdvanceBy`/`AdvanceTo`,
-consistent with how `MockClock` raises `Changed` in general.
+`ScheduledCancellationCollection` is owned by the `MockClock` and keeps at most one
+pending cancellation per `source`, in a `Dictionary` keyed by reference
+(`CancellationTokenSource` uses reference equality) guarded by a dedicated lock.
+`AddOrReplace`, **atomically under that lock**, removes any pending cancellation for
+the source and (for a positive timeout) schedules a new `ScheduledCancellation` —
+so a later call **reschedules** an earlier deadline (matching
+`CancellationTokenSource.CancelAfter`) with no lost update even under concurrent
+calls. `Timeout.InfiniteTimeSpan` schedules nothing (clearing the previous entry);
+`TimeSpan.Zero` cancels immediately.
 
-Two intentional simplifications, appropriate for a test double:
+A `ScheduledCancellation` is a `ScheduledAction` subclass whose action cancels the
+source and then removes its own entry (by key) from the collection. The
+`source.Cancel()` call is wrapped in a narrow `catch (ObjectDisposedException)`, so
+a source disposed **after** the call, while the cancellation is still pending, is
+handled gracefully — advancing the clock does not propagate the exception — while
+errors thrown by user-registered cancellation callbacks still surface. Because
+cancellation runs from a `Changed` handler, those callbacks run synchronously on
+the thread driving `AdvanceBy`/`AdvanceTo`, consistent with how `MockClock` raises
+`Changed` in general.
 
-- Each call schedules an **independent** cancellation rather than rescheduling a
-  previous one, so the earliest deadline reached cancels the source and later
-  scheduled cancellations become harmless no-ops.
+The replaced action is disposed *after* the lock is released: the fire path holds
+the action's own lock while it reacquires the collection lock (to remove its
+entry), so disposing under the collection lock would invert that order and risk a
+deadlock.
+
+One intentional limitation, appropriate for a test double:
+
 - A `CancelAfter` whose deadline is never reached leaves one `ScheduledAction`
-  subscribed to `Changed` for the clock's lifetime (holding the source closure);
-  it is released only when the deadline is reached or the `MockClock` is
-  collected. There is no disposal hook on `CancellationTokenSource` to key off,
-  and this mirrors a real pending `CancelAfter` timer.
+  subscribed to `Changed` (and one dictionary entry) for the clock's lifetime,
+  holding the source closure; it is released only when the deadline is reached,
+  the cancellation is rescheduled, or the `MockClock` is collected. `MockClock`
+  does not implement `IDisposable`, so there is no deterministic cleanup hook —
+  this mirrors a real pending `CancelAfter` timer and is acceptable for a clock
+  whose lifetime is a single test.
 
 ## Target frameworks and build layout
 

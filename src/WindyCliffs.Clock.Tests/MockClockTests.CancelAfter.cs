@@ -88,10 +88,10 @@ namespace WindyCliffs.Clock.Tests
             using var cts = new CancellationTokenSource();
             cts.Cancel();
 
+            // CancelAfter on an already-cancelled source finishes early and schedules nothing, so advancing
+            // past the would-be deadline does nothing and must not throw.
             clock.CancelAfter(cts, TimeSpan.FromSeconds(10));
 
-            // Advancing past the deadline calls Cancel() again, which is a harmless no-op on an
-            // already-cancelled source and must not throw.
             var exception = Record.Exception(() => clock.AdvanceBy(TimeSpan.FromSeconds(10)));
 
             Assert.Null(exception);
@@ -137,6 +137,111 @@ namespace WindyCliffs.Clock.Tests
             // The synchronous disposed check runs before any scheduling, so a zero timeout throws too
             // rather than reaching the immediate-fire path.
             Assert.Throws<ObjectDisposedException>(() => clock.CancelAfter(cts, TimeSpan.Zero));
+        }
+
+        [Fact]
+        public void CancelAfter_RescheduleToLaterDeadline_LatestCallWins()
+        {
+            var clock = new MockClock();
+            using var cts = new CancellationTokenSource();
+
+            // The issue #9 scenario: a later call must replace the earlier deadline (cancel at 20s, not 10s).
+            clock.CancelAfter(cts, TimeSpan.FromSeconds(10));
+            clock.CancelAfter(cts, TimeSpan.FromSeconds(20));
+
+            clock.AdvanceBy(TimeSpan.FromSeconds(10));
+
+            Assert.False(cts.IsCancellationRequested, "The superseded 10s deadline cancelled the source.");
+
+            clock.AdvanceBy(TimeSpan.FromSeconds(10));
+
+            Assert.True(cts.IsCancellationRequested);
+        }
+
+        [Fact]
+        public void CancelAfter_RescheduleToEarlierDeadline_LatestCallWins()
+        {
+            var clock = new MockClock();
+            using var cts = new CancellationTokenSource();
+
+            clock.CancelAfter(cts, TimeSpan.FromSeconds(20));
+            clock.CancelAfter(cts, TimeSpan.FromSeconds(10));
+
+            clock.AdvanceBy(TimeSpan.FromSeconds(10));
+
+            Assert.True(cts.IsCancellationRequested);
+        }
+
+        [Fact]
+        public void CancelAfter_RescheduleToInfinite_DisablesCancellation()
+        {
+            var clock = new MockClock();
+            using var cts = new CancellationTokenSource();
+
+            clock.CancelAfter(cts, TimeSpan.FromSeconds(10));
+            clock.CancelAfter(cts, Timeout.InfiniteTimeSpan);
+
+            clock.AdvanceBy(TimeSpan.FromHours(1));
+
+            Assert.False(cts.IsCancellationRequested, "Rescheduling to infinite did not cancel the pending 10s deadline.");
+        }
+
+        [Fact]
+        public void CancelAfter_RescheduleToZero_CancelsImmediately()
+        {
+            var clock = new MockClock();
+            using var cts = new CancellationTokenSource();
+
+            clock.CancelAfter(cts, TimeSpan.FromSeconds(10));
+            clock.CancelAfter(cts, TimeSpan.Zero);
+
+            Assert.True(cts.IsCancellationRequested);
+
+            // The superseded 10s action must be inert: advancing past its old deadline must not throw.
+            var exception = Record.Exception(() => clock.AdvanceBy(TimeSpan.FromSeconds(10)));
+
+            Assert.Null(exception);
+        }
+
+        [Fact]
+        public void CancelAfter_ZeroThenPositive_StaysCancelled()
+        {
+            var clock = new MockClock();
+            using var cts = new CancellationTokenSource();
+
+            // Zero cancels immediately; the later positive call sees an already-cancelled source and finishes
+            // early without scheduling anything. The source cannot be un-cancelled, and advancing the clock
+            // afterwards does nothing and must not throw.
+            clock.CancelAfter(cts, TimeSpan.Zero);
+            clock.CancelAfter(cts, TimeSpan.FromSeconds(10));
+
+            Assert.True(cts.IsCancellationRequested);
+
+            var exception = Record.Exception(() => clock.AdvanceBy(TimeSpan.FromSeconds(10)));
+
+            Assert.Null(exception);
+            Assert.True(cts.IsCancellationRequested);
+        }
+
+        [Fact]
+        public void CancelAfter_DisposedSourceAtRescheduleTime_AdvancingStaysSafe()
+        {
+            var clock = new MockClock();
+            var cts = new CancellationTokenSource();
+
+            clock.CancelAfter(cts, TimeSpan.FromSeconds(10));
+            cts.Dispose();
+
+            // Rescheduling on an already-disposed source is a programming error and throws, without mutating
+            // state (the probe runs before the map is touched, giving a strong exception guarantee).
+            Assert.Throws<ObjectDisposedException>(() => clock.CancelAfter(cts, TimeSpan.FromSeconds(5)));
+
+            // The original pending action lingers only until the clock advances past its deadline: it then
+            // fires, swallows the ObjectDisposedException from Cancel(), and removes itself — so advancing
+            // never throws.
+            var exception = Record.Exception(() => clock.AdvanceBy(TimeSpan.FromSeconds(10)));
+
+            Assert.Null(exception);
         }
     }
 }
