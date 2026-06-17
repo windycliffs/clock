@@ -44,10 +44,11 @@ namespace WindyCliffs.Clock
 
         public MockTimer(MockClock clock, object? state, TimeSpan dueTime, TimeSpan interval, TimerCallback callback)
         {
-            // Validate exactly as the System.Threading.Timer constructor does: truncate each TimeSpan to
-            // whole milliseconds, range-check both (before the null-callback check), then verify the
-            // callback. Truncating keeps scheduling faithful — a sub-millisecond due time collapses to
-            // zero and fires immediately, as a real Timer does.
+            // Range-validate exactly as the System.Threading.Timer constructor does: it converts each
+            // TimeSpan to whole milliseconds and requires the result in [-1, MaxSupportedTimeout],
+            // checking the ranges before the null-callback check. Milliseconds are needed only here and
+            // for the infinite/periodic classification just below, because Timer quantises both to whole
+            // milliseconds; everything else works in TimeSpan.
             long dueMilliseconds = (long)dueTime.TotalMilliseconds;
             long intervalMilliseconds = (long)interval.TotalMilliseconds;
 
@@ -70,16 +71,16 @@ namespace WindyCliffs.Clock
             this.state = state;
             this.callback = callback;
 
-            // A positive period repeats; both zero and -1 (infinite) milliseconds make the timer
-            // one-shot, matching System.Threading.Timer. period is left unused when !isPeriodic.
+            // A positive interval repeats; both a zero and an infinite interval make the timer one-shot,
+            // matching System.Threading.Timer. period is left unused when !isPeriodic.
             this.isPeriodic = intervalMilliseconds > 0;
-            this.period = TimeSpan.FromMilliseconds(intervalMilliseconds);
+            this.period = interval;
 
-            // An infinite due time (-1 ms) never fires: compute no target rather than offsetting UtcNow,
-            // which would otherwise move the deadline into the past and fire immediately.
+            // An infinite due time (-1 ms after truncation) never fires: store no target rather than
+            // offsetting UtcNow, which would otherwise move the deadline into the past and fire immediately.
             this.nextDueTime = dueMilliseconds < 0
                 ? (DateTimeOffset?)null
-                : this.clock.UtcNow + TimeSpan.FromMilliseconds(dueMilliseconds);
+                : this.clock.UtcNow + dueTime;
 
             // A timer with no due time can never fire, so there is nothing to subscribe to; it can only be
             // disposed. Otherwise subscribe and check the current time so an already-due timer (e.g. a
