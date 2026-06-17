@@ -17,11 +17,6 @@
 
         private static readonly TimeSpan DefaultAdvancementStep = TimeSpan.FromSeconds(1);
 
-        // The largest timeout System.Threading.Timer accepts, in milliseconds (0xFFFFFFFE). This is a
-        // fixed constant across .NET Framework and modern .NET, so MockClock and SystemClock reject the
-        // same out-of-range values on every target runtime.
-        private const long MaxSupportedTimeoutMilliseconds = 0xFFFFFFFE;
-
         private long utcNow = DefaultStartTime.ToFileTime();
 
         private TimeSpan advancementStep = DefaultAdvancementStep;
@@ -166,31 +161,9 @@
 
         /// <inheritdoc />
         public IDisposable StartTimer(object? state, TimeSpan dueTime, TimeSpan interval, TimerCallback callback)
-        {
-            // Replicate the System.Threading.Timer constructor's argument handling exactly: it truncates
-            // each TimeSpan to whole milliseconds, validates the ranges (before the null-callback check),
-            // then verifies the callback. Truncating here too keeps scheduling faithful — a sub-millisecond
-            // due time collapses to zero and fires immediately, as a real Timer does.
-            long dueMilliseconds = (long)dueTime.TotalMilliseconds;
-            long intervalMilliseconds = (long)interval.TotalMilliseconds;
-
-            if (dueMilliseconds < -1 || dueMilliseconds > MaxSupportedTimeoutMilliseconds)
-            {
-                throw new ArgumentOutOfRangeException(nameof(dueTime));
-            }
-
-            if (intervalMilliseconds < -1 || intervalMilliseconds > MaxSupportedTimeoutMilliseconds)
-            {
-                throw new ArgumentOutOfRangeException(nameof(interval));
-            }
-
-            if (callback is null)
-            {
-                throw new ArgumentNullException(nameof(callback));
-            }
-
-            return new MockTimer(this, state, dueMilliseconds, intervalMilliseconds, callback);
-        }
+            // MockTimer validates its arguments (mirroring the System.Threading.Timer constructor) and
+            // schedules itself against this clock's Changed event.
+            => new MockTimer(this, state, dueTime, interval, callback);
 
         /// <summary>
         /// Gets or sets the advancement step used by <see cref="AdvanceBy(TimeSpan)"/> and

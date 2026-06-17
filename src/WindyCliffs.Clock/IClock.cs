@@ -126,23 +126,10 @@
         /// <c>netstandard2.0</c> target.
         /// </returns>
         /// <remarks>
-        /// <para>
         /// <paramref name="dueTime"/> and <paramref name="interval"/> are validated exactly as the
         /// <see cref="System.Threading.Timer"/> constructor validates them: each is converted to
         /// whole milliseconds (truncating any sub-millisecond remainder) and must be between
         /// <c>-1</c> (<see cref="Timeout.InfiniteTimeSpan"/>) and <c>4294967294</c> inclusive.
-        /// </para>
-        /// <para>
-        /// <see cref="MockClock"/> drives the timer from its <see cref="MockClock.AdvanceBy(TimeSpan)"/> /
-        /// <see cref="MockClock.AdvanceTo(DateTimeOffset)"/> time-advancement rather than wall-clock
-        /// time, with three deliberate differences from a real <see cref="System.Threading.Timer"/>:
-        /// the callback runs <em>synchronously</em> on the thread that advances the clock (or the
-        /// constructing thread, for an already-due timer) rather than on a thread-pool thread; when
-        /// the clock advances past several intervals at once the callback fires once per elapsed
-        /// interval (catch-up), so behaviour is independent of the advancement step; and an exception
-        /// thrown by the callback propagates to the advancing caller (a real timer's thread-pool
-        /// callback exception would crash the process).
-        /// </para>
         /// </remarks>
         /// <exception cref="ArgumentNullException">
         /// When <paramref name="callback"/> is <see langword="null"/>.

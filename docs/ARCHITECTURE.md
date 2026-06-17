@@ -152,21 +152,19 @@ One intentional limitation, appropriate for a test double:
 
 ## How `MockClock.StartTimer` works
 
-`MockClock.StartTimer` validates its arguments **exactly as the
-`System.Threading.Timer` constructor does** — each of `dueTime`/`interval` is
-truncated to whole milliseconds and must fall in `[-1, 0xFFFFFFFE]` (the ranges
-are checked before the null-callback check, matching the constructor's order) —
-and then hands off to an internal `MockTimer`:
+`MockClock.StartTimer` simply constructs an internal `MockTimer`, which both
+validates the arguments and schedules itself. Validation matches the
+`System.Threading.Timer` constructor **exactly**: each of `dueTime`/`interval` is
+converted to `long` milliseconds (so a sub-millisecond value collapses to zero and
+fires immediately, like a real `Timer`) and must fall in `[-1, 0xFFFFFFFE]`, with
+the ranges checked before the null-callback check, matching the constructor's
+order. The `0xFFFFFFFE` upper bound is `Timer`'s fixed `MaxSupportedTimeout`,
+identical on every target runtime, so `MockClock` and `SystemClock` reject the same
+values.
 
-1. `dueTime`/`interval` are converted to `long` milliseconds (so a sub-millisecond
-   value collapses to zero and fires immediately, like a real `Timer`). The
-   `0xFFFFFFFE` upper bound is `Timer`'s fixed `MaxSupportedTimeout`, identical on
-   every target runtime, so `MockClock` and `SystemClock` reject the same values.
-2. A `MockTimer` is created from the truncated millisecond values.
-
-`MockTimer` resembles `ScheduledAction` — it subscribes to `Changed` at
-construction and checks the current time immediately so a zero/elapsed due time
-fires synchronously — but it is a **separate class**, because `ScheduledAction`'s
+`MockTimer` resembles `ScheduledAction` — when it has a due time it subscribes to
+`Changed` and checks the current time immediately so a zero/elapsed due time fires
+synchronously — but it is a **separate class**, because `ScheduledAction`'s
 fire-once-then-self-dispose invariant is incompatible with a periodic timer.
 Instead `MockTimer` holds a nullable `nextDueTime` and, on each `Changed`:
 
@@ -181,14 +179,16 @@ Instead `MockTimer` holds a nullable `nextDueTime` and, on each `Changed`:
 3. It loops, so a single advance that crosses several intervals fires the callback
    once per elapsed interval (**catch-up**), making the result independent of the
    advancement step. A one-shot timer's `nextDueTime` becomes `null` after the
-   single fire, so the loop terminates.
+   single fire, so the loop terminates. The moment `nextDueTime` becomes `null` —
+   meaning the timer can never fire again — `MockTimer` unsubscribes from `Changed`
+   so it does not linger on the clock's invocation list for the rest of the test.
 
 An infinite `dueTime` (`-1 ms`) sets `nextDueTime` to `null` at construction (no
 arithmetic on `UtcNow`, which would otherwise move the deadline into the past), so
-the timer never fires and can only be disposed. `Dispose` sets a disposed flag and
-unsubscribes from `Changed` under the lock; it is idempotent and safe from within
-the callback. A callback already in flight when `Dispose` runs may still complete,
-mirroring `System.Threading.Timer.Dispose()`.
+such a timer never even subscribes to `Changed`: it can only be disposed. `Dispose`
+sets a disposed flag and unsubscribes from `Changed` under the lock; it is
+idempotent and safe from within the callback. A callback already in flight when
+`Dispose` runs may still complete, mirroring `System.Threading.Timer.Dispose()`.
 
 Three deliberate differences from a real `System.Threading.Timer`, all consistent
 with how `MockClock` already runs scheduled work: the callback runs **synchronously

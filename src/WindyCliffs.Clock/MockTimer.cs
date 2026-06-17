@@ -13,12 +13,15 @@ namespace WindyCliffs.Clock
     /// Unlike a real <see cref="System.Threading.Timer"/>, the callback runs synchronously on the
     /// thread advancing the clock (or the constructing thread, for an already-due timer); when the
     /// clock advances past several intervals at once the callback fires once per elapsed interval; and
-    /// an exception thrown by the callback propagates to the advancing caller. The owner
-    /// (<see cref="MockClock.StartTimer"/>) is responsible for validating the arguments and passing the
-    /// already-truncated whole-millisecond <paramref name="dueMilliseconds"/> / <paramref name="periodMilliseconds"/>.
+    /// an exception thrown by the callback propagates to the advancing caller.
     /// </remarks>
     internal sealed class MockTimer : IDisposable
     {
+        // The largest timeout System.Threading.Timer accepts, in milliseconds (0xFFFFFFFE). This is a
+        // fixed constant across .NET Framework and modern .NET, so MockClock and SystemClock reject the
+        // same out-of-range values on every target runtime.
+        private const long MaxSupportedTimeoutMilliseconds = 0xFFFFFFFE;
+
         private readonly MockClock clock;
 
         private readonly object? state;
@@ -39,16 +42,38 @@ namespace WindyCliffs.Clock
         // again (an infinite due time at construction, or a one-shot timer that has already fired).
         private DateTimeOffset? nextDueTime;
 
-        public MockTimer(MockClock clock, object? state, long dueMilliseconds, long periodMilliseconds, TimerCallback callback)
+        public MockTimer(MockClock clock, object? state, TimeSpan dueTime, TimeSpan interval, TimerCallback callback)
         {
+            // Validate exactly as the System.Threading.Timer constructor does: truncate each TimeSpan to
+            // whole milliseconds, range-check both (before the null-callback check), then verify the
+            // callback. Truncating keeps scheduling faithful — a sub-millisecond due time collapses to
+            // zero and fires immediately, as a real Timer does.
+            long dueMilliseconds = (long)dueTime.TotalMilliseconds;
+            long intervalMilliseconds = (long)interval.TotalMilliseconds;
+
+            if (dueMilliseconds < -1 || dueMilliseconds > MaxSupportedTimeoutMilliseconds)
+            {
+                throw new ArgumentOutOfRangeException(nameof(dueTime));
+            }
+
+            if (intervalMilliseconds < -1 || intervalMilliseconds > MaxSupportedTimeoutMilliseconds)
+            {
+                throw new ArgumentOutOfRangeException(nameof(interval));
+            }
+
+            if (callback is null)
+            {
+                throw new ArgumentNullException(nameof(callback));
+            }
+
             this.clock = clock;
             this.state = state;
             this.callback = callback;
 
             // A positive period repeats; both zero and -1 (infinite) milliseconds make the timer
             // one-shot, matching System.Threading.Timer. period is left unused when !isPeriodic.
-            this.isPeriodic = periodMilliseconds > 0;
-            this.period = TimeSpan.FromMilliseconds(periodMilliseconds);
+            this.isPeriodic = intervalMilliseconds > 0;
+            this.period = TimeSpan.FromMilliseconds(intervalMilliseconds);
 
             // An infinite due time (-1 ms) never fires: compute no target rather than offsetting UtcNow,
             // which would otherwise move the deadline into the past and fire immediately.
@@ -56,11 +81,14 @@ namespace WindyCliffs.Clock
                 ? (DateTimeOffset?)null
                 : this.clock.UtcNow + TimeSpan.FromMilliseconds(dueMilliseconds);
 
-            this.clock.Changed += this.ClockChanged;
-
-            // Fire synchronously when the due time is already reached (e.g. a zero due time), matching
-            // ScheduledAction's construction-time check.
-            this.ClockChanged(this.clock, this.clock.UtcNow);
+            // A timer with no due time can never fire, so there is nothing to subscribe to; it can only be
+            // disposed. Otherwise subscribe and check the current time so an already-due timer (e.g. a
+            // zero due time) fires synchronously, matching ScheduledAction's construction-time check.
+            if (this.nextDueTime.HasValue)
+            {
+                this.clock.Changed += this.ClockChanged;
+                this.ClockChanged(this.clock, this.clock.UtcNow);
+            }
         }
 
         public void Dispose()
@@ -96,6 +124,13 @@ namespace WindyCliffs.Clock
                     // concurrent advance (or a re-entrant one raised by the callback) cannot re-fire the
                     // same tick. A one-shot timer becomes inert (null) after its single fire.
                     this.nextDueTime = this.isPeriodic ? due + this.period : (DateTimeOffset?)null;
+
+                    // Once the timer can never fire again, stop listening so it does not linger on the
+                    // clock's Changed list for the remainder of the clock's life.
+                    if (!this.nextDueTime.HasValue)
+                    {
+                        this.clock.Changed -= this.ClockChanged;
+                    }
                 }
 
                 // Invoke outside the lock: the callback is arbitrary user code that may advance the

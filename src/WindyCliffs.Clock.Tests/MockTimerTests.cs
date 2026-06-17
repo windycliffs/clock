@@ -6,10 +6,10 @@ namespace WindyCliffs.Clock.Tests
 
     public class MockTimerTests
     {
-        // milliseconds for an infinite (one-shot / never) timeout, matching Timeout.InfiniteTimeSpan.
-        private const long Infinite = -1;
+        // An infinite (one-shot / never) timeout.
+        private static readonly TimeSpan Infinite = Timeout.InfiniteTimeSpan;
 
-        private static long Ms(double seconds) => (long)TimeSpan.FromSeconds(seconds).TotalMilliseconds;
+        private static TimeSpan Sec(double seconds) => TimeSpan.FromSeconds(seconds);
 
         [Fact]
         public void FiresImmediatelyWhenDueTimeIsZero()
@@ -18,7 +18,7 @@ namespace WindyCliffs.Clock.Tests
             var fired = false;
 
             // A zero due time is already reached, so the constructor's check fires the callback synchronously.
-            using var timer = new MockTimer(clock, null, 0, Infinite, _ => fired = true);
+            using var timer = new MockTimer(clock, null, TimeSpan.Zero, Infinite, _ => fired = true);
 
             Assert.True(fired);
         }
@@ -29,7 +29,7 @@ namespace WindyCliffs.Clock.Tests
             var clock = new MockClock();
             var fired = false;
 
-            using var timer = new MockTimer(clock, null, Ms(5), Infinite, _ => fired = true);
+            using var timer = new MockTimer(clock, null, Sec(5), Infinite, _ => fired = true);
 
             clock.AdvanceBy(TimeSpan.FromSeconds(4));
 
@@ -42,7 +42,7 @@ namespace WindyCliffs.Clock.Tests
             var clock = new MockClock();
             var count = 0;
 
-            using var timer = new MockTimer(clock, null, Ms(1), Ms(1), _ => count++);
+            using var timer = new MockTimer(clock, null, Sec(1), Sec(1), _ => count++);
 
             // A single advance whose step is larger than the period must still fire once per elapsed
             // period (catch-up), so behaviour does not depend on the advancement granularity.
@@ -57,7 +57,7 @@ namespace WindyCliffs.Clock.Tests
             var clock = new MockClock();
             var fired = false;
 
-            var timer = new MockTimer(clock, null, Ms(5), Infinite, _ => fired = true);
+            var timer = new MockTimer(clock, null, Sec(5), Infinite, _ => fired = true);
             timer.Dispose();
 
             clock.AdvanceBy(TimeSpan.FromSeconds(5));
@@ -71,7 +71,7 @@ namespace WindyCliffs.Clock.Tests
             var clock = new MockClock();
             var count = 0;
 
-            using var timer = new MockTimer(clock, null, Ms(1), Ms(1), _ => count++);
+            using var timer = new MockTimer(clock, null, Sec(1), Sec(1), _ => count++);
 
             clock.AdvanceBy(TimeSpan.FromSeconds(3));
             Assert.Equal(3, count);
@@ -87,7 +87,7 @@ namespace WindyCliffs.Clock.Tests
         {
             var clock = new MockClock();
 
-            var timer = new MockTimer(clock, null, Ms(5), Infinite, _ => { });
+            var timer = new MockTimer(clock, null, Sec(5), Infinite, _ => { });
 
             timer.Dispose();
 
@@ -101,7 +101,7 @@ namespace WindyCliffs.Clock.Tests
         {
             var clock = new MockClock();
 
-            var timer = new MockTimer(clock, null, Ms(1), Infinite, _ => { });
+            var timer = new MockTimer(clock, null, Sec(1), Infinite, _ => { });
 
             clock.AdvanceBy(TimeSpan.FromSeconds(1));
 
@@ -119,7 +119,7 @@ namespace WindyCliffs.Clock.Tests
 
             // The callback runs outside the lock, so disposing the timer from within it must not
             // deadlock and must stop any further periodic callbacks.
-            timer = new MockTimer(clock, null, Ms(1), Ms(1), _ =>
+            timer = new MockTimer(clock, null, Sec(1), Sec(1), _ =>
             {
                 count++;
                 timer!.Dispose();
@@ -136,7 +136,7 @@ namespace WindyCliffs.Clock.Tests
             var clock = new MockClock();
             var count = 0;
 
-            using var timer = new MockTimer(clock, null, Ms(1), Ms(1), _ =>
+            using var timer = new MockTimer(clock, null, Sec(1), Sec(1), _ =>
             {
                 count++;
 
@@ -161,7 +161,7 @@ namespace WindyCliffs.Clock.Tests
             var clockB = new MockClock();
             var fired = false;
 
-            using var timer = new MockTimer(clockA, null, Ms(1), Infinite, _ => fired = true);
+            using var timer = new MockTimer(clockA, null, Sec(1), Infinite, _ => fired = true);
 
             clockB.AdvanceBy(TimeSpan.FromSeconds(10));
 
@@ -175,8 +175,8 @@ namespace WindyCliffs.Clock.Tests
             var firstCount = 0;
             var secondCount = 0;
 
-            using var first = new MockTimer(clock, null, Ms(1), Ms(1), _ => firstCount++);
-            using var second = new MockTimer(clock, null, Ms(2), Ms(2), _ => secondCount++);
+            using var first = new MockTimer(clock, null, Sec(1), Sec(1), _ => firstCount++);
+            using var second = new MockTimer(clock, null, Sec(2), Sec(2), _ => secondCount++);
 
             clock.AdvanceBy(TimeSpan.FromSeconds(4));
 
