@@ -51,6 +51,8 @@ The operating-system clock:
   `Task.Delay(timeout, cancellationToken)`.
 - `SystemClock.Instance.CancelAfter(source, timeout)` delegates to
   `source.CancelAfter(timeout)`.
+- `SystemClock.Instance.StartTimer(state, dueTime, interval, callback)` creates a
+  `System.Threading.Timer(callback, state, dueTime, interval)`.
 
 Use it in production; use `MockClock` in tests.
 
@@ -210,3 +212,56 @@ exactly as `CancellationTokenSource.CancelAfter` does. Rescheduling to
 one. (A source that has already been cancelled cannot be un-cancelled, so
 rescheduling has a visible effect only while the earlier deadline is still
 pending.)
+
+### `StartTimer` semantics
+
+`MockClock.StartTimer` is the time-advancement-driven counterpart of the
+`System.Threading.Timer` constructor. It invokes `callback` (passing `state`)
+when the clock is advanced to `UtcNow + dueTime`, and — for a positive
+`interval` — again on every subsequent `interval`. It returns an `IDisposable`
+that stops the timer.
+
+`dueTime` and `interval` are validated exactly as the `Timer` constructor
+validates them (each truncated to whole milliseconds, then required to be
+between `-1` / `Timeout.InfiniteTimeSpan` and `4294967294` inclusive):
+
+| Argument                                  | Behaviour                                                                            |
+| ----------------------------------------- | ------------------------------------------------------------------------------------ |
+| `dueTime` `TimeSpan.Zero`                 | `callback` fires immediately, synchronously during the `StartTimer` call.            |
+| `dueTime` positive, finite                | `callback` fires once the clock is advanced to `UtcNow + dueTime`.                   |
+| `dueTime` `Timeout.InfiniteTimeSpan`      | The timer never fires; it can only be disposed.                                      |
+| `interval` positive                       | After the first fire, `callback` fires again on every `interval`.                    |
+| `interval` `TimeSpan.Zero` or infinite    | The timer is one-shot — `callback` fires only once (when `dueTime` elapses).         |
+| `dueTime`/`interval` out of range         | Throws `ArgumentOutOfRangeException` (`< -1 ms` or `> 4294967294 ms`).               |
+| `callback` `null`                         | Throws `ArgumentNullException`.                                                      |
+
+`Dispose()` stops future callbacks, is idempotent, and is safe to call after the
+timer has fired or from within the callback itself. (A callback already in
+progress when `Dispose()` is called may still run to completion, exactly as with
+`System.Threading.Timer.Dispose()`.)
+
+The callback runs synchronously on the thread that advances the clock — so a
+pending timer is driven from the same thread, just like `TaskDelay` and
+`CancelAfter`:
+
+```csharp
+var clock = new MockClock();
+var ticks = 0;
+
+using IDisposable timer = clock.StartTimer(
+    state: null,
+    dueTime: TimeSpan.FromSeconds(1),
+    interval: TimeSpan.FromSeconds(1),
+    callback: _ => ticks++);
+
+clock.AdvanceBy(TimeSpan.FromSeconds(5));
+
+Assert.Equal(5, ticks); // one tick per elapsed interval
+```
+
+Because the timer fires once per elapsed `interval`, the result is independent of
+the `AdvancementStep` used to advance the clock: advancing five seconds in one
+ten-second step or in five one-second steps both yield five ticks. (This differs
+from a real `Timer`, which runs its callback on a thread-pool thread and may
+coalesce missed ticks. An exception thrown by the callback likewise propagates to
+the `AdvanceBy`/`AdvanceTo` caller rather than being swallowed.)

@@ -38,5 +38,13 @@
 
             source.CancelAfter(timeout);
         }
+
+        /// <inheritdoc />
+        public IDisposable StartTimer(object? state, TimeSpan dueTime, TimeSpan interval, TimerCallback callback)
+            // IClock orders the arguments (state, dueTime, interval, callback) for readability; the
+            // Timer constructor orders them (callback, state, dueTime, period). The constructor performs
+            // the null-callback and range validation the IClock contract specifies, and Timer itself is
+            // the returned IDisposable (Dispose stops it — no Change-then-dispose dance is needed).
+            => new Timer(callback, state, dueTime, interval);
     }
 }

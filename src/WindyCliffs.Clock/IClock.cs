@@ -91,5 +91,66 @@
         /// When <paramref name="source"/> has already been disposed.
         /// </exception>
         void CancelAfter(CancellationTokenSource source, TimeSpan timeout);
+
+        /// <summary>
+        /// Starts a timer that invokes <paramref name="callback"/> after <paramref name="dueTime"/>
+        /// elapses and, for a positive <paramref name="interval"/>, repeatedly every
+        /// <paramref name="interval"/> thereafter.
+        /// Replacement for the <see cref="System.Threading.Timer"/> constructor.
+        /// </summary>
+        /// <param name="state">
+        /// An object passed to <paramref name="callback"/> on every invocation, or
+        /// <see langword="null"/>.
+        /// </param>
+        /// <param name="dueTime">
+        /// The amount of time to wait before <paramref name="callback"/> is invoked for the first
+        /// time. <see cref="TimeSpan.Zero"/> invokes <paramref name="callback"/> immediately;
+        /// <see cref="Timeout.InfiniteTimeSpan"/> prevents the first invocation, so the timer never
+        /// fires until it is restarted (which this abstraction does not support) — it can only be
+        /// disposed.
+        /// </param>
+        /// <param name="interval">
+        /// The amount of time between invocations of <paramref name="callback"/>. A value of
+        /// <see cref="TimeSpan.Zero"/> or <see cref="Timeout.InfiniteTimeSpan"/> disables periodic
+        /// signalling, so <paramref name="callback"/> is invoked only once (when
+        /// <paramref name="dueTime"/> elapses). Any positive value makes the timer periodic.
+        /// </param>
+        /// <param name="callback">The delegate invoked when the timer fires.</param>
+        /// <returns>
+        /// An <see cref="IDisposable"/> that stops the timer when disposed. Disposing it prevents
+        /// any <em>future</em> invocations and is idempotent and safe to call after the timer has
+        /// fired (including from within <paramref name="callback"/> itself); a callback already in
+        /// progress when <see cref="IDisposable.Dispose"/> is called may still run to completion,
+        /// mirroring <see cref="System.Threading.Timer.Dispose()"/>. The return type is intentionally
+        /// <see cref="IDisposable"/> only (not <c>IAsyncDisposable</c>), matching the library's
+        /// <c>netstandard2.0</c> target.
+        /// </returns>
+        /// <remarks>
+        /// <para>
+        /// <paramref name="dueTime"/> and <paramref name="interval"/> are validated exactly as the
+        /// <see cref="System.Threading.Timer"/> constructor validates them: each is converted to
+        /// whole milliseconds (truncating any sub-millisecond remainder) and must be between
+        /// <c>-1</c> (<see cref="Timeout.InfiniteTimeSpan"/>) and <c>4294967294</c> inclusive.
+        /// </para>
+        /// <para>
+        /// <see cref="MockClock"/> drives the timer from its <see cref="MockClock.AdvanceBy(TimeSpan)"/> /
+        /// <see cref="MockClock.AdvanceTo(DateTimeOffset)"/> time-advancement rather than wall-clock
+        /// time, with three deliberate differences from a real <see cref="System.Threading.Timer"/>:
+        /// the callback runs <em>synchronously</em> on the thread that advances the clock (or the
+        /// constructing thread, for an already-due timer) rather than on a thread-pool thread; when
+        /// the clock advances past several intervals at once the callback fires once per elapsed
+        /// interval (catch-up), so behaviour is independent of the advancement step; and an exception
+        /// thrown by the callback propagates to the advancing caller (a real timer's thread-pool
+        /// callback exception would crash the process).
+        /// </para>
+        /// </remarks>
+        /// <exception cref="ArgumentNullException">
+        /// When <paramref name="callback"/> is <see langword="null"/>.
+        /// </exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// When the whole-millisecond value of <paramref name="dueTime"/> or
+        /// <paramref name="interval"/> is less than <c>-1</c> or greater than <c>4294967294</c>.
+        /// </exception>
+        IDisposable StartTimer(object? state, TimeSpan dueTime, TimeSpan interval, TimerCallback callback);
     }
 }
