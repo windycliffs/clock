@@ -159,6 +159,12 @@
             this.scheduledCancellations.AddOrReplace(source, timeout);
         }
 
+        /// <inheritdoc />
+        public IDisposable StartTimer(object? state, TimeSpan dueTime, TimeSpan interval, TimerCallback callback)
+            // MockTimer validates its arguments (mirroring the System.Threading.Timer constructor) and
+            // schedules itself against this clock's Changed event.
+            => new MockTimer(this, state, dueTime, interval, callback);
+
         /// <summary>
         /// Gets or sets the advancement step used by <see cref="AdvanceBy(TimeSpan)"/> and
         /// <see cref="AdvanceTo(DateTimeOffset)"/> methods.

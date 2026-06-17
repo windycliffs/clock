@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.5.0]
+
+### Added
+- `IClock.StartTimer(object?, TimeSpan, TimeSpan, TimerCallback)` with `SystemClock`
+  (creates a `System.Threading.Timer`) and `MockClock` (drives an internal
+  `MockTimer` from the existing `AdvanceBy`/`AdvanceTo` time-advancement machinery)
+  implementations. Argument handling matches the `System.Threading.Timer`
+  constructor; with `MockClock` the callback fires synchronously on the advancing
+  thread, once per elapsed interval when the clock jumps past several at once.
+
+### Changed
+- **Breaking:** `IClock` gains a member, so existing third-party implementations
+  must add `StartTimer`. Per the pre-1.0 versioning rule this is a minor bump.
+
 ## [0.4.1]
 
 ### Fixed
