@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/) and this project adheres to
 [Semantic Versioning](https://semver.org/).
 
+## [0.6.0]
+
+### Added
+- `IClock.TaskWait(Task, TimeSpan, CancellationToken)`,
+  `IClock.TaskWaitAny(Task[], TimeSpan, CancellationToken)`, and
+  `IClock.TaskWaitAll(Task[], TimeSpan, CancellationToken)` with `SystemClock`
+  (delegate to `Task.Wait` / `Task.WaitAny` / `Task.WaitAll`) and `MockClock`
+  implementations. With `MockClock` the timeout is measured on the managed time
+  scale (it elapses only when the clock is advanced via `AdvanceBy`/`AdvanceTo`),
+  while the wait itself still blocks the calling thread. Return values, cancellation,
+  and faulted-task (`AggregateException`) behaviour match the underlying BCL methods.
+
+### Changed
+- **Breaking:** `IClock` gains three members, so existing third-party implementations
+  must add `TaskWait`, `TaskWaitAny`, and `TaskWaitAll` (default interface members are
+  not an option on the `netstandard2.0` / C# 9 target). Per the pre-1.0 versioning rule
+  this is a minor bump.
+
 ## [0.5.0]
 
 ### Added

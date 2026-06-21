@@ -53,6 +53,12 @@ The operating-system clock:
   `source.CancelAfter(timeout)`.
 - `SystemClock.Instance.StartTimer(state, dueTime, interval, callback)` creates a
   `System.Threading.Timer(callback, state, dueTime, interval)`.
+- `SystemClock.Instance.TaskWait(task, timeout, cancellationToken)` delegates to
+  `task.Wait(...)`.
+- `SystemClock.Instance.TaskWaitAny(tasks, timeout, cancellationToken)` delegates to
+  `Task.WaitAny(...)`.
+- `SystemClock.Instance.TaskWaitAll(tasks, timeout, cancellationToken)` delegates to
+  `Task.WaitAll(...)`.
 
 Use it in production; use `MockClock` in tests.
 
@@ -265,3 +271,48 @@ ten-second step or in five one-second steps both yield five ticks. (This differs
 from a real `Timer`, which runs its callback on a thread-pool thread and may
 coalesce missed ticks. An exception thrown by the callback likewise propagates to
 the `AdvanceBy`/`AdvanceTo` caller rather than being swallowed.)
+
+### `TaskWait` / `TaskWaitAny` / `TaskWaitAll` semantics
+
+`MockClock.TaskWait`, `TaskWaitAny`, and `TaskWaitAll` are the
+time-advancement-driven counterparts of `Task.Wait`, `Task.WaitAny`, and
+`Task.WaitAll`. They block the calling thread (just like `Sleep`) until either the
+awaited task(s) settle or the `timeout` elapses — but the `timeout` is measured on
+the **managed time scale**, so it elapses only when the clock is advanced to
+`UtcNow + timeout` (via `AdvanceBy`/`AdvanceTo`), typically from another thread.
+
+The return and exception contract matches the BCL methods:
+
+| Method                  | Returns                                                | On timeout |
+| ----------------------- | ------------------------------------------------------ | ---------- |
+| `TaskWait(task, …)`     | `true` once `task` completes within the timeout        | `false`    |
+| `TaskWaitAny(tasks, …)` | the index of the first task to complete                | `-1`       |
+| `TaskWaitAll(tasks, …)` | `true` once every task completes within the timeout    | `false`    |
+
+- `timeout` is truncated to whole milliseconds and must be between `-1`
+  (`Timeout.InfiniteTimeSpan`, an indefinite wait) and `int.MaxValue` inclusive;
+  otherwise `ArgumentOutOfRangeException` is thrown. `TimeSpan.Zero` returns
+  immediately after testing the current state.
+- Cancelling `cancellationToken` while a wait is blocked throws
+  `OperationCanceledException`.
+- A faulted or canceled task is re-thrown as an `AggregateException` by `TaskWait`
+  and `TaskWaitAll`. `TaskWaitAny` never throws for a faulted task — it just returns
+  the task's index.
+- A `null` `task`/`tasks` argument throws `ArgumentNullException`; a `null` element
+  inside `tasks` throws `ArgumentException`.
+
+```csharp
+var clock = new MockClock();
+var gate = new TaskCompletionSource<bool>();
+
+// On a worker thread, wait up to 30 (managed) seconds for the task.
+bool completed = false;
+var waiter = new Thread(() => completed = clock.TaskWait(gate.Task, TimeSpan.FromSeconds(30)));
+waiter.Start();
+
+// Advancing past the timeout makes the wait return false.
+clock.AdvanceBy(TimeSpan.FromSeconds(30));
+waiter.Join();
+
+Assert.False(completed); // the gate never completed within the managed timeout
+```

@@ -139,5 +139,135 @@
         /// <paramref name="interval"/> is less than <c>-1</c> or greater than <c>4294967294</c>.
         /// </exception>
         IDisposable StartTimer(object? state, TimeSpan dueTime, TimeSpan interval, TimerCallback callback);
+
+        /// <summary>
+        /// Blocks the calling thread until <paramref name="task"/> completes, the
+        /// <paramref name="timeout"/> elapses, or <paramref name="cancellationToken"/> is cancelled.
+        /// Replacement for <see cref="Task.Wait(TimeSpan)"/> (with an added cancellation token).
+        /// </summary>
+        /// <param name="task">The task to wait on.</param>
+        /// <param name="timeout">
+        /// The amount of time to wait. <see cref="TimeSpan.Zero"/> tests the task's state and returns
+        /// immediately; <see cref="Timeout.InfiniteTimeSpan"/> waits indefinitely. The value is
+        /// truncated to whole milliseconds and must be between <c>-1</c>
+        /// (<see cref="Timeout.InfiniteTimeSpan"/>) and <see cref="int.MaxValue"/> inclusive.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// A token to observe while waiting. Cancelling it transitions the wait to throwing an
+        /// <see cref="OperationCanceledException"/>.
+        /// </param>
+        /// <returns>
+        /// <see langword="true"/> if <paramref name="task"/> completed within
+        /// <paramref name="timeout"/>; otherwise <see langword="false"/>.
+        /// </returns>
+        /// <remarks>
+        /// With <see cref="MockClock"/> the <paramref name="timeout"/> is measured on the managed time
+        /// scale, so it only elapses when the clock is advanced (via <see cref="MockClock.AdvanceBy(TimeSpan)"/>
+        /// or <see cref="MockClock.AdvanceTo(DateTimeOffset)"/>); the wait itself still blocks the
+        /// calling thread, exactly as <see cref="Sleep(TimeSpan)"/> does.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException">
+        /// When <paramref name="task"/> is <see langword="null"/>.
+        /// </exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// When the whole-millisecond value of <paramref name="timeout"/> is less than <c>-1</c> or
+        /// greater than <see cref="int.MaxValue"/>.
+        /// </exception>
+        /// <exception cref="OperationCanceledException">
+        /// When <paramref name="cancellationToken"/> is cancelled while waiting. As with
+        /// <see cref="Task.Wait(TimeSpan)"/>, a <paramref name="task"/> that has already run to
+        /// completion (or faulted) is reported without observing the token, so an already-cancelled
+        /// token does not suppress such a result.
+        /// </exception>
+        /// <exception cref="AggregateException">
+        /// When <paramref name="task"/> completes in the faulted or canceled state; the exception
+        /// wraps the task's exception(s).
+        /// </exception>
+        bool TaskWait(Task task, TimeSpan timeout, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Blocks the calling thread until any of the <paramref name="tasks"/> completes, the
+        /// <paramref name="timeout"/> elapses, or <paramref name="cancellationToken"/> is cancelled.
+        /// Replacement for <see cref="Task.WaitAny(Task[], int, CancellationToken)"/>.
+        /// </summary>
+        /// <param name="tasks">The tasks to wait on.</param>
+        /// <param name="timeout">
+        /// The amount of time to wait. <see cref="TimeSpan.Zero"/> tests the tasks' state and returns
+        /// immediately; <see cref="Timeout.InfiniteTimeSpan"/> waits indefinitely. The value is
+        /// truncated to whole milliseconds and must be between <c>-1</c>
+        /// (<see cref="Timeout.InfiniteTimeSpan"/>) and <see cref="int.MaxValue"/> inclusive.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// A token to observe while waiting. Cancelling it transitions the wait to throwing an
+        /// <see cref="OperationCanceledException"/>.
+        /// </param>
+        /// <returns>
+        /// The index of the first completed task in <paramref name="tasks"/>, or <c>-1</c> if
+        /// <paramref name="timeout"/> elapsed first. Unlike <see cref="TaskWait"/> this does not throw
+        /// when a task completes in the faulted or canceled state; it simply returns that task's index.
+        /// </returns>
+        /// <remarks>
+        /// With <see cref="MockClock"/> the <paramref name="timeout"/> is measured on the managed time
+        /// scale, so it only elapses when the clock is advanced; the wait itself still blocks the
+        /// calling thread.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException">
+        /// When <paramref name="tasks"/> is <see langword="null"/>.
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        /// When <paramref name="tasks"/> contains a <see langword="null"/> element.
+        /// </exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// When the whole-millisecond value of <paramref name="timeout"/> is less than <c>-1</c> or
+        /// greater than <see cref="int.MaxValue"/>.
+        /// </exception>
+        /// <exception cref="OperationCanceledException">
+        /// When <paramref name="cancellationToken"/> is cancelled while waiting.
+        /// </exception>
+        int TaskWaitAny(Task[] tasks, TimeSpan timeout, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Blocks the calling thread until all of the <paramref name="tasks"/> complete, the
+        /// <paramref name="timeout"/> elapses, or <paramref name="cancellationToken"/> is cancelled.
+        /// Replacement for <see cref="Task.WaitAll(Task[], int, CancellationToken)"/>.
+        /// </summary>
+        /// <param name="tasks">The tasks to wait on.</param>
+        /// <param name="timeout">
+        /// The amount of time to wait. <see cref="TimeSpan.Zero"/> tests the tasks' state and returns
+        /// immediately; <see cref="Timeout.InfiniteTimeSpan"/> waits indefinitely. The value is
+        /// truncated to whole milliseconds and must be between <c>-1</c>
+        /// (<see cref="Timeout.InfiniteTimeSpan"/>) and <see cref="int.MaxValue"/> inclusive.
+        /// </param>
+        /// <param name="cancellationToken">
+        /// A token to observe while waiting. Cancelling it transitions the wait to throwing an
+        /// <see cref="OperationCanceledException"/>.
+        /// </param>
+        /// <returns>
+        /// <see langword="true"/> if every task in <paramref name="tasks"/> completed within
+        /// <paramref name="timeout"/>; otherwise <see langword="false"/>.
+        /// </returns>
+        /// <remarks>
+        /// With <see cref="MockClock"/> the <paramref name="timeout"/> is measured on the managed time
+        /// scale, so it only elapses when the clock is advanced; the wait itself still blocks the
+        /// calling thread.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException">
+        /// When <paramref name="tasks"/> is <see langword="null"/>.
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        /// When <paramref name="tasks"/> contains a <see langword="null"/> element.
+        /// </exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// When the whole-millisecond value of <paramref name="timeout"/> is less than <c>-1</c> or
+        /// greater than <see cref="int.MaxValue"/>.
+        /// </exception>
+        /// <exception cref="OperationCanceledException">
+        /// When <paramref name="cancellationToken"/> is cancelled while waiting.
+        /// </exception>
+        /// <exception cref="AggregateException">
+        /// When one or more of the <paramref name="tasks"/> complete in the faulted or canceled state;
+        /// the exception wraps the tasks' exception(s).
+        /// </exception>
+        bool TaskWaitAll(Task[] tasks, TimeSpan timeout, CancellationToken cancellationToken = default);
     }
 }

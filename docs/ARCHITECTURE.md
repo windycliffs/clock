@@ -17,6 +17,9 @@ public interface IClock
     Task TaskDelay(TimeSpan timeout, CancellationToken cancellationToken = default);
     void CancelAfter(CancellationTokenSource source, TimeSpan timeout);
     IDisposable StartTimer(object? state, TimeSpan dueTime, TimeSpan interval, TimerCallback callback);
+    bool TaskWait(Task task, TimeSpan timeout, CancellationToken cancellationToken = default);
+    int TaskWaitAny(Task[] tasks, TimeSpan timeout, CancellationToken cancellationToken = default);
+    bool TaskWaitAll(Task[] tasks, TimeSpan timeout, CancellationToken cancellationToken = default);
 }
 ```
 
@@ -40,6 +43,10 @@ stateless singleton exposed through `SystemClock.Instance`:
   `System.Threading.Timer(callback, state, dueTime, interval)` and returns it (the
   timer is itself the `IDisposable`). All argument validation is the `Timer`
   constructor's own.
+- `TaskWait` / `TaskWaitAny` / `TaskWaitAll` convert the `TimeSpan` timeout to whole
+  milliseconds (via the shared `WaitTimeout` helper) and delegate to `Task.Wait` /
+  `Task.WaitAny` / `Task.WaitAll`. `TaskWait` null-checks `task` first; the array
+  methods leave null/element validation to the BCL.
 
 ### `MockClock`
 
@@ -197,6 +204,43 @@ up** one-per-interval rather than coalesced; and an exception thrown by the call
 **propagates** to the `AdvanceBy`/`AdvanceTo` caller (a real timer's thread-pool
 callback exception would crash the process), just as user cancellation callbacks
 surface through `CancelAfter`.
+
+## How `MockClock.TaskWait` / `TaskWaitAny` / `TaskWaitAll` work
+
+These methods block the calling thread (like `Sleep`) but measure the timeout on
+the managed time scale. The key idea is to **encode the managed-time timeout as a
+`Task`** by reusing the existing `MockClock.TaskDelay`: that task completes only
+when the clock is advanced past the deadline, never completes for an infinite
+timeout, and is already completed for a zero timeout. The wait itself is then a
+real `Task.WaitAny` over the user task(s) plus the timeout task:
+
+1. The timeout is validated exactly as `Task.Wait` validates it (whole milliseconds
+   in `[-1, int.MaxValue]`, via the shared `WaitTimeout` helper) before scheduling.
+2. A per-call `CancellationTokenSource` drives the timeout `TaskDelay`. After the
+   wait settles, a `finally` cancels it so the abandoned `ScheduledAction` is
+   dropped promptly rather than lingering on `Changed`; the cancelled timeout task
+   is never observed and raises no `UnobservedTaskException`.
+3. `Task.WaitAny(…, Timeout.Infinite, cancellationToken)` blocks until a task
+   settles or the token cancels. `Timeout.Infinite` is used because the timing
+   already lives in the timeout task (and the `(Task[], CancellationToken)` overload
+   does not exist on `netstandard2.0`). `WaitAny`'s in-order first pass means a
+   completed user task wins over an already-elapsed timeout, matching `Task.Wait`.
+4. `TaskWait` first short-circuits an already-completed task (mirroring `Task.Wait`'s
+   own fast path, where a successfully-completed task ignores the token); otherwise it
+   returns `true` (re-throwing a faulted/canceled task as an `AggregateException` via a
+   trailing `task.Wait()`) or `false` on timeout.
+   `TaskWaitAny` appends the timeout as a sentinel task and maps its index to `-1`;
+   it returns a faulted task's index without throwing. `TaskWaitAll` waits on
+   `Task.WhenAll(tasks)` so it completes only once every task has, re-throwing the
+   aggregated faults via the same trailing `.Wait()`.
+
+Because `TaskDelay` completes its task with `RunContinuationsAsynchronously`,
+completing the timeout from inside `AdvanceBy`/`AdvanceTo` does not run the waiter's
+continuations inline on the advancing thread — the advance returns promptly and the
+blocked thread wakes on the thread pool. (One parity caveat: a multi-faulted
+`TaskWaitAll` aggregates through `Task.WhenAll`, so the order of the resulting
+`AggregateException.InnerExceptions` may differ from `Task.WaitAll`; only the
+throw-vs-no-throw behaviour and the set of wrapped exceptions are guaranteed.)
 
 ## Target frameworks and build layout
 
