@@ -280,5 +280,158 @@ namespace WindyCliffs.Clock.Tests
 
             Assert.False(fired.Wait(TimeSpan.FromMilliseconds(200), TestContext.Current.CancellationToken), "Timer fired despite an infinite due time.");
         }
+
+        // A short, fixed wall-clock budget for the genuine-timeout tests below, large enough to be
+        // reliable on a loaded CI machine without slowing the suite (cf. CancelAfter_CancelsAfterDelay).
+        private static readonly TimeSpan ShortTimeout = TimeSpan.FromMilliseconds(50);
+
+        [Fact]
+        public void TaskWait_NullTask()
+        {
+            Assert.Throws<ArgumentNullException>(
+                () => SystemClock.Instance.TaskWait(null!, ShortTimeout, TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public void TaskWait_NegativeTimeout()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(
+                () => SystemClock.Instance.TaskWait(Task.CompletedTask, TimeSpan.FromSeconds(-2), TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public void TaskWait_TimeoutTooLarge()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(
+                () => SystemClock.Instance.TaskWait(Task.CompletedTask, TimeSpan.FromDays(30), TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public void TaskWait_CompletedTask_ReturnsTrue()
+        {
+            Assert.True(SystemClock.Instance.TaskWait(Task.CompletedTask, ShortTimeout, TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public void TaskWait_TimesOut_ReturnsFalse()
+        {
+            var pending = new TaskCompletionSource<bool>();
+
+            Assert.False(SystemClock.Instance.TaskWait(pending.Task, ShortTimeout, TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public void TaskWait_AlreadyCancelledToken()
+        {
+            var pending = new TaskCompletionSource<bool>();
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            Assert.Throws<OperationCanceledException>(
+                () => SystemClock.Instance.TaskWait(pending.Task, Timeout.InfiniteTimeSpan, cts.Token));
+        }
+
+        [Fact]
+        public void TaskWait_FaultedTask_ThrowsAggregateException()
+        {
+            Task faulted = Task.FromException(new InvalidOperationException());
+
+            AggregateException error = Assert.Throws<AggregateException>(
+                () => SystemClock.Instance.TaskWait(faulted, ShortTimeout, TestContext.Current.CancellationToken));
+            Assert.IsType<InvalidOperationException>(error.InnerException);
+        }
+
+        [Fact]
+        public void TaskWaitAny_NullTasks()
+        {
+            Assert.Throws<ArgumentNullException>(
+                () => SystemClock.Instance.TaskWaitAny(null!, ShortTimeout, TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public void TaskWaitAny_NullElement()
+        {
+            Assert.Throws<ArgumentException>(
+                () => SystemClock.Instance.TaskWaitAny(new Task[] { null! }, ShortTimeout, TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public void TaskWaitAny_EmptyArray_ReturnsMinusOne()
+        {
+            Assert.Equal(-1, SystemClock.Instance.TaskWaitAny(Array.Empty<Task>(), ShortTimeout, TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public void TaskWaitAny_CompletedTask_ReturnsIndex()
+        {
+            var pending = new TaskCompletionSource<bool>();
+            var tasks = new[] { pending.Task, Task.CompletedTask };
+
+            Assert.Equal(1, SystemClock.Instance.TaskWaitAny(tasks, ShortTimeout, TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public void TaskWaitAny_TimesOut_ReturnsMinusOne()
+        {
+            var pending = new TaskCompletionSource<bool>();
+
+            Assert.Equal(-1, SystemClock.Instance.TaskWaitAny(new[] { pending.Task }, ShortTimeout, TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public void TaskWaitAny_FaultedTask_ReturnsIndexWithoutThrowing()
+        {
+            Task faulted = Task.FromException(new InvalidOperationException());
+
+            Assert.Equal(0, SystemClock.Instance.TaskWaitAny(new[] { faulted }, ShortTimeout, TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public void TaskWaitAll_NullTasks()
+        {
+            Assert.Throws<ArgumentNullException>(
+                () => SystemClock.Instance.TaskWaitAll(null!, ShortTimeout, TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public void TaskWaitAll_NullElement()
+        {
+            Assert.Throws<ArgumentException>(
+                () => SystemClock.Instance.TaskWaitAll(new Task[] { null! }, ShortTimeout, TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public void TaskWaitAll_EmptyArray_ReturnsTrue()
+        {
+            Assert.True(SystemClock.Instance.TaskWaitAll(Array.Empty<Task>(), ShortTimeout, TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public void TaskWaitAll_AllCompleted_ReturnsTrue()
+        {
+            var tasks = new[] { Task.CompletedTask, Task.CompletedTask };
+
+            Assert.True(SystemClock.Instance.TaskWaitAll(tasks, ShortTimeout, TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public void TaskWaitAll_TimesOut_ReturnsFalse()
+        {
+            var pending = new TaskCompletionSource<bool>();
+            var tasks = new[] { Task.CompletedTask, pending.Task };
+
+            Assert.False(SystemClock.Instance.TaskWaitAll(tasks, ShortTimeout, TestContext.Current.CancellationToken));
+        }
+
+        [Fact]
+        public void TaskWaitAll_FaultedTask_ThrowsAggregateException()
+        {
+            Task faulted = Task.FromException(new InvalidOperationException());
+            var tasks = new[] { Task.CompletedTask, faulted };
+
+            AggregateException error = Assert.Throws<AggregateException>(
+                () => SystemClock.Instance.TaskWaitAll(tasks, ShortTimeout, TestContext.Current.CancellationToken));
+            Assert.IsType<InvalidOperationException>(error.InnerException);
+        }
     }
 }

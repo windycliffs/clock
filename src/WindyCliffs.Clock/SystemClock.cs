@@ -46,5 +46,28 @@
             // the null-callback and range validation the IClock contract specifies, and Timer itself is
             // the returned IDisposable (Dispose stops it — no Change-then-dispose dance is needed).
             => new Timer(callback, state, dueTime, interval);
+
+        /// <inheritdoc />
+        public bool TaskWait(Task task, TimeSpan timeout, CancellationToken cancellationToken = default)
+        {
+            // Enforce the IClock contract's ArgumentNullException; a bare instance call on a null
+            // receiver would throw NullReferenceException instead (same reasoning as CancelAfter).
+            if (task is null)
+            {
+                throw new ArgumentNullException(nameof(task));
+            }
+
+            return task.Wait(WaitTimeout.ToMilliseconds(timeout, nameof(timeout)), cancellationToken);
+        }
+
+        /// <inheritdoc />
+        public int TaskWaitAny(Task[] tasks, TimeSpan timeout, CancellationToken cancellationToken = default)
+            // Task.WaitAny performs the null-array and null-element validation the IClock contract specifies.
+            => Task.WaitAny(tasks, WaitTimeout.ToMilliseconds(timeout, nameof(timeout)), cancellationToken);
+
+        /// <inheritdoc />
+        public bool TaskWaitAll(Task[] tasks, TimeSpan timeout, CancellationToken cancellationToken = default)
+            // Task.WaitAll performs the null-array and null-element validation the IClock contract specifies.
+            => Task.WaitAll(tasks, WaitTimeout.ToMilliseconds(timeout, nameof(timeout)), cancellationToken);
     }
 }

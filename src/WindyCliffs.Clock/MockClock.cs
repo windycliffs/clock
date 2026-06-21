@@ -165,6 +165,140 @@
             // schedules itself against this clock's Changed event.
             => new MockTimer(this, state, dueTime, interval, callback);
 
+        /// <inheritdoc />
+        public bool TaskWait(Task task, TimeSpan timeout, CancellationToken cancellationToken = default)
+        {
+            if (task is null)
+            {
+                throw new ArgumentNullException(nameof(task));
+            }
+
+            // Validate the timeout exactly as Task.Wait does, before delegating to TaskDelay (which
+            // accepts a wider range). The converted value is unused here; MockClock passes the
+            // TimeSpan straight to TaskDelay, so this call is only for its validation side effect.
+            _ = WaitTimeout.ToMilliseconds(timeout, nameof(timeout));
+
+            // Fast path mirroring Task.Wait: an already-completed task settles without blocking, and the
+            // cancellation token only takes precedence over a task that did not run to completion — and
+            // then only over a canceled one (a faulted task surfaces its own AggregateException even
+            // under a cancelled token). task.Wait() re-throws faults/cancellation as Task.Wait does.
+            if (task.IsCompleted)
+            {
+                if (task.IsCanceled)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                }
+
+                task.Wait();
+                return true;
+            }
+
+            // Encode the managed-time timeout as a task: TaskDelay completes only when the clock is
+            // advanced past the deadline, never completes for an infinite timeout, and is already
+            // completed for a zero timeout.
+            using var timeoutCancellation = new CancellationTokenSource();
+            Task timeoutTask = this.TaskDelay(timeout, timeoutCancellation.Token);
+            try
+            {
+                // Block in real time on whichever task settles first. Timeout.Infinite is passed as the
+                // millisecond timeout (the timing already lives in timeoutTask); the
+                // (Task[], CancellationToken) overload is unavailable on netstandard2.0. WaitAny's
+                // first pass returns the lowest already-completed index, so a completed task wins over
+                // an already-elapsed (e.g. zero) timeout, matching Task.Wait.
+                if (Task.WaitAny(new[] { task, timeoutTask }, Timeout.Infinite, cancellationToken) == 0)
+                {
+                    // The task is complete; this returns immediately and re-throws a faulted or
+                    // canceled task as an AggregateException, exactly as Task.Wait does.
+                    task.Wait();
+                    return true;
+                }
+
+                return false;
+            }
+            finally
+            {
+                // Drop the pending ScheduledAction if the timeout did not fire. The abandoned, now
+                // canceled timeoutTask is never observed and raises no UnobservedTaskException.
+                timeoutCancellation.Cancel();
+            }
+        }
+
+        /// <inheritdoc />
+        public int TaskWaitAny(Task[] tasks, TimeSpan timeout, CancellationToken cancellationToken = default)
+        {
+            if (tasks is null)
+            {
+                throw new ArgumentNullException(nameof(tasks));
+            }
+
+            _ = WaitTimeout.ToMilliseconds(timeout, nameof(timeout));
+
+            // Task.WaitAny returns -1 for an empty array without waiting (but still observes an
+            // already-cancelled token first); mirror that before scheduling.
+            if (tasks.Length == 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return -1;
+            }
+
+            using var timeoutCancellation = new CancellationTokenSource();
+
+            // Append the managed-time timeout as a sentinel task; its index means "timed out".
+            var candidates = new Task[tasks.Length + 1];
+            Array.Copy(tasks, candidates, tasks.Length);
+            candidates[tasks.Length] = this.TaskDelay(timeout, timeoutCancellation.Token);
+            try
+            {
+                // Task.WaitAny validates the null elements among the user tasks. Unlike TaskWait, a
+                // faulted or canceled task is not re-thrown here: its index is simply returned.
+                int index = Task.WaitAny(candidates, Timeout.Infinite, cancellationToken);
+                return index == tasks.Length ? -1 : index;
+            }
+            finally
+            {
+                timeoutCancellation.Cancel();
+            }
+        }
+
+        /// <inheritdoc />
+        public bool TaskWaitAll(Task[] tasks, TimeSpan timeout, CancellationToken cancellationToken = default)
+        {
+            if (tasks is null)
+            {
+                throw new ArgumentNullException(nameof(tasks));
+            }
+
+            _ = WaitTimeout.ToMilliseconds(timeout, nameof(timeout));
+
+            // Mirror Task.WaitAll, which throws for an already-cancelled token regardless of task
+            // state. This must be explicit: TaskWaitAll blocks via Task.WaitAny (Task.WhenAll has no
+            // timeout overload), and Task.WaitAny's pre-completed-task first pass can otherwise win
+            // over a cancelled token on .NET Framework, diverging from SystemClock.TaskWaitAll.
+            cancellationToken.ThrowIfCancellationRequested();
+
+            using var timeoutCancellation = new CancellationTokenSource();
+
+            // Task.WhenAll validates the null elements, completes only once every task has, and
+            // aggregates all faults; an empty array yields an already-completed task.
+            Task completion = Task.WhenAll(tasks);
+            Task timeoutTask = this.TaskDelay(timeout, timeoutCancellation.Token);
+            try
+            {
+                if (Task.WaitAny(new[] { completion, timeoutTask }, Timeout.Infinite, cancellationToken) == 0)
+                {
+                    // Re-throw the aggregated faults as an AggregateException, like Task.WaitAll.
+                    completion.Wait();
+                    return true;
+                }
+
+                return false;
+            }
+            finally
+            {
+                timeoutCancellation.Cancel();
+            }
+        }
+
         /// <summary>
         /// Gets or sets the advancement step used by <see cref="AdvanceBy(TimeSpan)"/> and
         /// <see cref="AdvanceTo(DateTimeOffset)"/> methods.
